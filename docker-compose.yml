@@ -1,0 +1,50 @@
+services:
+  # Banco de Dados Relacional PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: foodrush-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-foodrush_db}
+      POSTGRES_USER: ${DB_USER:-foodrush}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-foodrush_secret_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-foodrush} -d ${DB_NAME:-foodrush_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - foodrush-net
+
+  # API Backend Node.js / Express
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: foodrush-api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      DATABASE_URL: postgres://${DB_USER:-foodrush}:${DB_PASSWORD:-foodrush_secret_pass}@postgres:5432/${DB_NAME:-foodrush_db}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - foodrush-net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  foodrush-net:
+    driver: bridge
+
