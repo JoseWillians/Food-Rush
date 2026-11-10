@@ -3,11 +3,18 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export const STORAGE_KEYS = {
   ONBOARDING_COMPLETED: "@foodrush:onboarding_completed",
   AUTH_USER: "@foodrush:auth_user",
+  ACCOUNTS: "@foodrush:accounts",
   FAVORITES: "@foodrush:favorites",
+  FAVORITE_PRODUCTS: "@foodrush:favorite_products",
   CART: "@foodrush:cart",
   ORDERS: "@foodrush:orders",
   CUSTOM_RESTAURANTS: "@foodrush:custom_restaurants",
   CUSTOM_PRODUCTS: "@foodrush:custom_products",
+  REVIEWS: "@foodrush:reviews",
+  RESTAURANT_RATINGS: "@foodrush:restaurant_ratings",
+  STORE_ORDERS: "@foodrush:store_orders", // pedidos feitos para lojas de empreendedores
+  HOME_FILTERS: "@foodrush:home_filters",
+  CHAT: "@foodrush:chat", // + "_" + id do pedido
 } as const;
 
 export async function storageGet<T>(key: string, defaultValue: T): Promise<T> {

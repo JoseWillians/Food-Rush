@@ -25,6 +25,10 @@ export type AppInputProps = TextInputProps & {
   inputStyle?: StyleProp<TextStyle>;
 };
 
+/**
+ * Campo de texto padrão do app, com rótulo, ícones, mostrar/ocultar senha
+ * e mensagem de erro embaixo do campo.
+ */
 export function AppInput({
   label,
   error,
@@ -92,7 +96,9 @@ export function AppInput({
 const styles = StyleSheet.create({
   wrapper: {
     marginBottom: spacing.md,
-    width: "100%",
+    // "stretch" ocupa a largura toda numa coluna, mas respeita o flex quando
+    // dois campos ficam lado a lado (com width: "100%" eles se sobrepunham)
+    alignSelf: "stretch",
   },
   label: {
     fontSize: fontSizes.sm,
@@ -119,6 +125,9 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    // Na web a caixa de texto tem largura mínima própria (~200px) e não encolhia,
+    // então dois campos lado a lado ficavam um por cima do outro
+    minWidth: 0,
     fontSize: fontSizes.md,
     fontFamily: typography.regular,
     color: colors.text,

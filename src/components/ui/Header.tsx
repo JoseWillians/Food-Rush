@@ -12,6 +12,9 @@ export type HeaderProps = {
   rightAction?: React.ReactNode;
 };
 
+/**
+ * Cabeçalho das telas internas: botão de voltar, título e ação à direita.
+ */
 export function Header({
   title,
   showBack = true,

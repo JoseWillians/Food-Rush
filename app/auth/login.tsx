@@ -12,44 +12,60 @@ import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@/src/theme/colors";
+import { STORE_CATEGORIES } from "@/src/constants/stores";
 import { borderRadius, spacing } from "@/src/theme/spacing";
 import { fontSizes, typography } from "@/src/theme/typography";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppInput } from "@/src/components/ui/AppInput";
-import { useAuth } from "@/src/contexts/AuthContext";
-import { api } from "@/src/services/api";
+import { DEMO_EMAIL, DEMO_PASSWORD, useAuth } from "@/src/contexts/AuthContext";
 import { PartnerStore, UserRole } from "@/src/types";
+import { showMessage } from "@/src/utils/dialog";
+import {
+  MIN_PASSWORD_LENGTH,
+  formatPhone,
+  isValidEmail,
+  isValidPhone,
+  parsePrice,
+} from "@/src/utils/validation";
 
 type AuthTab = "login" | "register";
 
-const STORE_CATEGORIES = [
-  "Lanches",
-  "Pizza",
-  "Sushi",
-  "Brasileira",
-  "Italiano",
-  "Sobremesas",
-  "Bebidas",
-];
+// Erros por campo: a chave é o nome do campo e o valor é a mensagem
+type FieldErrors = Record<string, string>;
 
+
+/**
+ * Tela de Login e Cadastro.
+ * - Login: valida o e-mail e a senha e confere a conta no AuthContext.
+ * - Cadastro: cliente ou empreendedor (com os dados da loja), com validação campo a campo.
+ * - Esqueceu a senha: redefine a senha no próprio aparelho.
+ */
 export default function AuthScreen() {
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, resetPassword } = useAuth();
   const [activeTab, setActiveTab] = useState<AuthTab>("login");
   const [loading, setLoading] = useState(false);
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
-  const [loginError, setLoginError] = useState("");
+  const [loginErrors, setLoginErrors] = useState<FieldErrors>({});
+
+  // Redefinição de senha (aparece no lugar do login)
+  const [showReset, setShowReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetNewPassword, setResetNewPassword] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetErrors, setResetErrors] = useState<FieldErrors>({});
 
   // Register form state
   const [accountType, setAccountType] = useState<UserRole>("customer");
   const [regName, setRegName] = useState("");
   const [regLastName, setRegLastName] = useState("");
-  const [regContact, setRegContact] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPhone, setRegPhone] = useState("");
   const [regPassword, setRegPassword] = useState("");
   const [regConfirmPassword, setRegConfirmPassword] = useState("");
-  const [regError, setRegError] = useState("");
+  const [regErrors, setRegErrors] = useState<FieldErrors>({});
 
   // Partner store form state
   const [storeName, setStoreName] = useState("");
@@ -59,82 +75,145 @@ export default function AuthScreen() {
   const [storeAddress, setStoreAddress] = useState("");
   const [storePhone, setStorePhone] = useState("");
 
+  // ---------- LOGIN ----------
   const handleLogin = async () => {
-    if (!loginEmail.trim() || !loginPassword.trim()) {
-      setLoginError("Por favor, preencha todos os campos.");
-      return;
-    }
-    setLoginError("");
+    const errors: FieldErrors = {};
+    if (!loginEmail.trim()) errors.email = "Informe seu e-mail.";
+    else if (!isValidEmail(loginEmail)) errors.email = "Digite um e-mail válido.";
+    if (!loginPassword) errors.password = "Informe sua senha.";
+    else if (loginPassword.length < MIN_PASSWORD_LENGTH)
+      errors.password = `A senha tem no mínimo ${MIN_PASSWORD_LENGTH} caracteres.`;
+
+    setLoginErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
     setLoading(true);
     try {
-      await signIn(loginEmail, loginPassword);
+      // O AuthContext confere se a conta existe e se a senha está certa
+      const result = await signIn(loginEmail, loginPassword);
+      if (!result.ok) {
+        setLoginErrors({ [result.field]: result.message });
+        return;
+      }
       router.replace("/(tabs)");
-    } catch {
-      setLoginError("Erro ao autenticar. Tente novamente.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRegister = async () => {
-    if (!regName.trim() || !regContact.trim() || !regPassword.trim()) {
-      setRegError("Preencha todos os campos obrigatórios.");
-      return;
-    }
-    if (regPassword !== regConfirmPassword) {
-      setRegError("As senhas não coincidem.");
-      return;
-    }
-    if (accountType === "partner" && !storeName.trim()) {
-      setRegError("Por favor, informe o nome do seu restaurante/loja.");
-      return;
-    }
+  const fillDemoAccount = () => {
+    setLoginEmail(DEMO_EMAIL);
+    setLoginPassword(DEMO_PASSWORD);
+    setLoginErrors({});
+  };
 
-    setRegError("");
+  // Google e Apple exigem configurar contas de desenvolvedor, então ficam só como demonstração
+  const handleSocialLogin = (provider: string) => {
+    showMessage(
+      `Entrar com ${provider}`,
+      `O login com ${provider} ainda não está disponível nesta versão. Use e-mail e senha ou a conta de demonstração.`
+    );
+  };
+
+  // ---------- REDEFINIR SENHA ----------
+  const openReset = () => {
+    setResetEmail(loginEmail);
+    setResetNewPassword("");
+    setResetConfirm("");
+    setResetErrors({});
+    setShowReset(true);
+  };
+
+  const handleResetPassword = async () => {
+    const errors: FieldErrors = {};
+    if (!isValidEmail(resetEmail)) errors.email = "Digite um e-mail válido.";
+    if (resetNewPassword.length < MIN_PASSWORD_LENGTH)
+      errors.password = `A senha precisa ter no mínimo ${MIN_PASSWORD_LENGTH} caracteres.`;
+    if (resetConfirm !== resetNewPassword) errors.confirm = "As senhas não coincidem.";
+
+    setResetErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
     setLoading(true);
     try {
-      let createdStore: PartnerStore | undefined = undefined;
-
-      if (accountType === "partner") {
-        createdStore = {
-          id: `store-${Date.now()}`,
-          name: storeName.trim(),
-          category: storeCategory,
-          deliveryTime: storeDeliveryTime.trim() || "30-45 min",
-          deliveryFee: parseFloat(storeDeliveryFee.replace(",", ".")) || 0,
-          address: storeAddress.trim() || "Endereço cadastrado",
-          phone: storePhone.trim() || regContact.trim(),
-          isOpen: true,
-        };
-
-        // Envia para o backend em background
-        try {
-          await api.registerPartner({
-            ownerName: `${regName} ${regLastName}`.trim(),
-            ownerEmail: regContact.trim(),
-            storeName: createdStore.name,
-            category: createdStore.category,
-            deliveryTime: createdStore.deliveryTime,
-            deliveryFee: createdStore.deliveryFee,
-            address: createdStore.address,
-            phone: createdStore.phone,
-          });
-        } catch {
-          // Fallback silencioso
-        }
+      const result = await resetPassword(resetEmail, resetNewPassword);
+      if (!result.ok) {
+        setResetErrors({ [result.field]: result.message });
+        return;
       }
+      showMessage("Senha alterada", "Pronto! Agora entre com a nova senha.");
+      setLoginEmail(resetEmail.trim());
+      setLoginPassword("");
+      setShowReset(false);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      await signUp({
-        name: regName.trim(),
-        lastName: regLastName.trim(),
-        email: regContact.trim(),
-        role: accountType,
-        store: createdStore,
-      });
+  // ---------- CADASTRO ----------
+  const validateRegister = (): FieldErrors => {
+    const errors: FieldErrors = {};
+    if (!regName.trim()) errors.name = "Informe seu nome.";
+    if (!regEmail.trim()) errors.email = "Informe seu e-mail.";
+    else if (!isValidEmail(regEmail)) errors.email = "Digite um e-mail válido.";
+    if (!regPhone.trim()) errors.phone = "Informe seu celular.";
+    else if (!isValidPhone(regPhone)) errors.phone = "Digite o DDD e o número completo.";
+    if (regPassword.length < MIN_PASSWORD_LENGTH)
+      errors.password = `A senha precisa ter no mínimo ${MIN_PASSWORD_LENGTH} caracteres.`;
+    if (regConfirmPassword !== regPassword) errors.confirm = "As senhas não coincidem.";
+
+    if (accountType === "partner") {
+      if (!storeName.trim()) errors.storeName = "Informe o nome da sua loja.";
+      if (parsePrice(storeDeliveryFee) === null)
+        errors.storeFee = "Digite um valor válido. Ex: 5,99 ou 0";
+      if (!storeDeliveryTime.trim()) errors.storeTime = "Informe o tempo de entrega.";
+      if (storePhone.trim() && !isValidPhone(storePhone))
+        errors.storePhone = "Digite o DDD e o número completo.";
+    }
+    return errors;
+  };
+
+  const handleRegister = async () => {
+    const errors = validateRegister();
+    setRegErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    setLoading(true);
+    try {
+      const createdStore: PartnerStore | undefined =
+        accountType === "partner"
+          ? {
+              id: `store-${Date.now()}`,
+              name: storeName.trim(),
+              category: storeCategory,
+              deliveryTime: storeDeliveryTime.trim(),
+              deliveryFee: parsePrice(storeDeliveryFee) ?? 0,
+              address: storeAddress.trim() || "Endereço cadastrado",
+              phone: storePhone.trim() || regPhone,
+              isOpen: true,
+            }
+          : undefined;
+
+      // O signUp cria a conta e, se for empreendedor, cadastra a loja (uma vez só)
+      const result = await signUp(
+        {
+          name: regName.trim(),
+          lastName: regLastName.trim(),
+          email: regEmail.trim(),
+          phone: regPhone,
+          role: accountType,
+          store: createdStore,
+        },
+        regPassword
+      );
+      if (!result.ok) {
+        setRegErrors({ [result.field]: result.message });
+        return;
+      }
 
       router.replace("/(tabs)");
     } catch {
-      setRegError("Erro ao cadastrar. Tente novamente.");
+      setRegErrors({ general: "Erro ao cadastrar. Tente novamente." });
     } finally {
       setLoading(false);
     }
@@ -163,7 +242,10 @@ export default function AuthScreen() {
           <View style={styles.tabContainer}>
             <Pressable
               style={[styles.tabButton, activeTab === "login" && styles.activeTabButton]}
-              onPress={() => setActiveTab("login")}
+              onPress={() => {
+                setActiveTab("login");
+                setShowReset(false);
+              }}
             >
               <Text
                 style={[styles.tabText, activeTab === "login" && styles.activeTabText]}
@@ -185,15 +267,68 @@ export default function AuthScreen() {
           </View>
 
           {activeTab === "login" ? (
+            showReset ? (
+            /* Redefinir senha: feita no próprio aparelho, sem envio de e-mail */
+            <View style={styles.formSection}>
+              <Text style={styles.resetTitle}>Redefinir senha</Text>
+              <Text style={styles.resetInfo}>
+                Nesta versão do app as contas ficam salvas no próprio celular, então não
+                enviamos e-mail. Informe o e-mail da conta e escolha uma nova senha.
+              </Text>
+
+              <AppInput
+                label="E-mail da conta"
+                placeholder="exemplo@email.com"
+                value={resetEmail}
+                onChangeText={setResetEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                error={resetErrors.email}
+                leftIcon={<Ionicons name="mail-outline" size={20} color={colors.gray400} />}
+              />
+              <AppInput
+                label="Nova senha"
+                placeholder={`Mínimo de ${MIN_PASSWORD_LENGTH} caracteres`}
+                value={resetNewPassword}
+                onChangeText={setResetNewPassword}
+                isPassword
+                error={resetErrors.password}
+                leftIcon={<Ionicons name="lock-closed-outline" size={20} color={colors.gray400} />}
+              />
+              <AppInput
+                label="Confirme a nova senha"
+                placeholder="Digite a senha novamente"
+                value={resetConfirm}
+                onChangeText={setResetConfirm}
+                isPassword
+                error={resetErrors.confirm}
+                leftIcon={<Ionicons name="checkmark-circle-outline" size={20} color={colors.gray400} />}
+              />
+
+              <AppButton
+                title="Salvar nova senha"
+                onPress={handleResetPassword}
+                loading={loading}
+                size="lg"
+                style={styles.mainButton}
+              />
+              <Pressable style={styles.switchAuth} onPress={() => setShowReset(false)}>
+                <Text style={styles.switchAuthText}>
+                  Lembrou a senha? <Text style={styles.switchAuthHighlight}>Voltar ao login</Text>
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
             /* Formulário de Login */
             <View style={styles.formSection}>
               <AppInput
-                label="E-mail ou telefone"
+                label="E-mail"
                 placeholder="exemplo@email.com"
                 value={loginEmail}
                 onChangeText={setLoginEmail}
                 autoCapitalize="none"
                 keyboardType="email-address"
+                error={loginErrors.email}
                 leftIcon={<Ionicons name="mail-outline" size={20} color={colors.gray400} />}
               />
 
@@ -203,17 +338,13 @@ export default function AuthScreen() {
                 value={loginPassword}
                 onChangeText={setLoginPassword}
                 isPassword
+                error={loginErrors.password}
                 leftIcon={<Ionicons name="lock-closed-outline" size={20} color={colors.gray400} />}
               />
 
-              <Pressable
-                style={styles.forgotPassword}
-                onPress={() => alert("Recuperação de senha enviada para seu e-mail!")}
-              >
+              <Pressable style={styles.forgotPassword} onPress={openReset}>
                 <Text style={styles.forgotPasswordText}>Esqueceu a senha?</Text>
               </Pressable>
-
-              {loginError ? <Text style={styles.errorBanner}>{loginError}</Text> : null}
 
               <AppButton
                 title="Entrar"
@@ -222,6 +353,23 @@ export default function AuthScreen() {
                 size="lg"
                 style={styles.mainButton}
               />
+
+              {/* Conta pronta para a professora e o grupo testarem */}
+              <Pressable
+                style={styles.demoBox}
+                onPress={fillDemoAccount}
+                accessibilityRole="button"
+                accessibilityLabel="Preencher com a conta de demonstração"
+              >
+                <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.demoTitle}>Conta de demonstração</Text>
+                  <Text style={styles.demoText}>
+                    {DEMO_EMAIL} · senha {DEMO_PASSWORD}
+                  </Text>
+                  <Text style={styles.demoLink}>Toque para preencher</Text>
+                </View>
+              </Pressable>
 
               <View style={styles.dividerRow}>
                 <View style={styles.dividerLine} />
@@ -232,7 +380,7 @@ export default function AuthScreen() {
               <AppButton
                 title="Continuar com Google"
                 variant="outline"
-                onPress={() => handleLogin()}
+                onPress={() => handleSocialLogin("Google")}
                 leftIcon={<Ionicons name="logo-google" size={20} color={colors.primary} />}
                 style={styles.socialButton}
               />
@@ -240,10 +388,11 @@ export default function AuthScreen() {
               <AppButton
                 title="Continuar com Apple"
                 variant="secondary"
-                onPress={() => handleLogin()}
+                onPress={() => handleSocialLogin("Apple")}
                 leftIcon={<Ionicons name="logo-apple" size={20} color={colors.text} />}
                 style={styles.socialButton}
               />
+              <Text style={styles.socialNote}>Google e Apple: em breve</Text>
 
               <Pressable
                 style={styles.switchAuth}
@@ -254,6 +403,7 @@ export default function AuthScreen() {
                 </Text>
               </Pressable>
             </View>
+          )
           ) : (
             /* Formulário de Cadastro com Opção de Empreendedor */
             <View style={styles.formSection}>
@@ -339,6 +489,7 @@ export default function AuthScreen() {
                     placeholder="Seu nome"
                     value={regName}
                     onChangeText={setRegName}
+                    error={regErrors.name}
                   />
                 </View>
                 <View style={styles.halfInput}>
@@ -352,21 +503,34 @@ export default function AuthScreen() {
               </View>
 
               <AppInput
-                label="Número de celular ou e-mail"
-                placeholder="(98) 99999-9999 ou email"
-                value={regContact}
-                onChangeText={setRegContact}
+                label="E-mail"
+                placeholder="exemplo@email.com"
+                value={regEmail}
+                onChangeText={setRegEmail}
                 autoCapitalize="none"
                 keyboardType="email-address"
-                leftIcon={<Ionicons name="person-outline" size={20} color={colors.gray400} />}
+                error={regErrors.email}
+                leftIcon={<Ionicons name="mail-outline" size={20} color={colors.gray400} />}
+              />
+
+              <AppInput
+                label="Celular"
+                placeholder="(98) 99999-9999"
+                value={regPhone}
+                onChangeText={(text) => setRegPhone(formatPhone(text))}
+                keyboardType="phone-pad"
+                maxLength={15}
+                error={regErrors.phone}
+                leftIcon={<Ionicons name="call-outline" size={20} color={colors.gray400} />}
               />
 
               <AppInput
                 label="Senha"
-                placeholder="Crie uma senha"
+                placeholder={`Mínimo de ${MIN_PASSWORD_LENGTH} caracteres`}
                 value={regPassword}
                 onChangeText={setRegPassword}
                 isPassword
+                error={regErrors.password}
                 leftIcon={<Ionicons name="lock-closed-outline" size={20} color={colors.gray400} />}
               />
 
@@ -376,6 +540,7 @@ export default function AuthScreen() {
                 value={regConfirmPassword}
                 onChangeText={setRegConfirmPassword}
                 isPassword
+                error={regErrors.confirm}
                 leftIcon={<Ionicons name="checkmark-circle-outline" size={20} color={colors.gray400} />}
               />
 
@@ -392,6 +557,7 @@ export default function AuthScreen() {
                     placeholder="Ex: Burger Rush Prime"
                     value={storeName}
                     onChangeText={setStoreName}
+                    error={regErrors.storeName}
                     leftIcon={<Ionicons name="restaurant-outline" size={20} color={colors.gray400} />}
                   />
 
@@ -435,6 +601,7 @@ export default function AuthScreen() {
                         placeholder="Ex: 30-45 min"
                         value={storeDeliveryTime}
                         onChangeText={setStoreDeliveryTime}
+                        error={regErrors.storeTime}
                       />
                     </View>
                     <View style={styles.halfInput}>
@@ -443,7 +610,8 @@ export default function AuthScreen() {
                         placeholder="Ex: 5.99"
                         value={storeDeliveryFee}
                         onChangeText={setStoreDeliveryFee}
-                        keyboardType="numeric"
+                        keyboardType="decimal-pad"
+                        error={regErrors.storeFee}
                       />
                     </View>
                   </View>
@@ -460,14 +628,20 @@ export default function AuthScreen() {
                     label="Telefone Comercial / WhatsApp"
                     placeholder="Ex: (98) 98888-1234"
                     value={storePhone}
-                    onChangeText={setStorePhone}
+                    onChangeText={(text) => setStorePhone(formatPhone(text))}
                     keyboardType="phone-pad"
+                    maxLength={15}
+                    error={regErrors.storePhone}
                     leftIcon={<Ionicons name="call-outline" size={20} color={colors.gray400} />}
                   />
                 </View>
               )}
 
-              {regError ? <Text style={styles.errorBanner}>{regError}</Text> : null}
+              {Object.keys(regErrors).length > 0 ? (
+                <Text style={styles.errorBanner}>
+                  {regErrors.general || "Confira os campos destacados em vermelho."}
+                </Text>
+              ) : null}
 
               <AppButton
                 title={accountType === "partner" ? "Cadastrar Minha Loja" : "Criar Conta"}
@@ -494,6 +668,49 @@ export default function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
+  resetTitle: {
+    fontSize: fontSizes.lg,
+    fontFamily: typography.bold,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  resetInfo: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  demoBox: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    backgroundColor: colors.primaryLight,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  demoTitle: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.semiBold,
+    color: colors.text,
+  },
+  demoText: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+  },
+  demoLink: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.semiBold,
+    color: colors.primary,
+    marginTop: 2,
+  },
+  socialNote: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+    textAlign: "center",
+  },
   container: {
     flex: 1,
     backgroundColor: colors.white,

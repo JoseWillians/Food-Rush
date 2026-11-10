@@ -3,6 +3,7 @@ import {
   FlatList,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -47,11 +48,14 @@ const SLIDES: OnboardingSlide[] = [
   {
     id: "4",
     title: "Acompanhe seu pedido",
-    description: "Veja seu pedido em tempo real, do tempo real até a entrega",
+    description: "Veja seu pedido em tempo real, do preparo até a entrega",
     icon: "location-outline",
   },
 ];
 
+/**
+ * Telas de boas-vindas mostradas na primeira vez que o app abre.
+ */
 export default function OnboardingScreen() {
   const { width } = useWindowDimensions();
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -64,10 +68,12 @@ export default function OnboardingScreen() {
 
   const handleNext = () => {
     if (currentIndex < SLIDES.length - 1) {
-      flatListRef.current?.scrollToIndex({
-        index: currentIndex + 1,
-        animated: true,
-      });
+      const next = currentIndex + 1;
+      // Rola até o próximo slide pela posição (largura da tela × número do slide)
+      // e já atualiza o slide atual. Antes o índice só mudava quando o usuário
+      // arrastava com o dedo, por isso o botão "Próximo" parecia não fazer nada.
+      flatListRef.current?.scrollToOffset({ offset: next * width, animated: true });
+      setCurrentIndex(next);
     } else {
       handleFinish();
     }
@@ -101,6 +107,10 @@ export default function OnboardingScreen() {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onScroll}
+        // Na web o "fim do arrasto" não é avisado, então também acompanha a rolagem
+        onScroll={Platform.OS === "web" ? onScroll : undefined}
+        scrollEventThrottle={16}
+        getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
         renderItem={({ item }) => (
           <View style={[styles.slide, { width }]}>
             <View style={styles.iconCircle}>

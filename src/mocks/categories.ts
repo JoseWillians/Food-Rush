@@ -1,10 +1,6 @@
 import { Category } from "@/src/types";
+import seed from "@/database/seed.json";
 
-export const mockCategories: Category[] = [
-  { id: "1", name: "Lanches", icon: "fast-food-outline" },
-  { id: "2", name: "Pizza", icon: "pizza-outline" },
-  { id: "3", name: "Sushi", icon: "fish-outline" },
-  { id: "4", name: "Brasileira", icon: "restaurant-outline" },
-  { id: "5", name: "Italiano", icon: "wine-outline" },
-];
-
+// Os dados vêm de database/seed.json, o mesmo arquivo usado pelo server.js.
+// Assim o app (modo offline) e o servidor mostram sempre as mesmas informações.
+export const mockCategories: Category[] = seed.categories;

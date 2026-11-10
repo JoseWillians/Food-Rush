@@ -29,6 +29,10 @@ export type AppButtonProps = {
   textStyle?: StyleProp<TextStyle>;
 };
 
+/**
+ * Botão padrão do app, com variantes (primário, contorno, fantasma...),
+ * tamanhos, ícone e estado de carregando.
+ */
 export function AppButton({
   title,
   onPress,

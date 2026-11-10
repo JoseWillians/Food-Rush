@@ -11,6 +11,9 @@ export type BackButtonProps = {
   style?: StyleProp<ViewStyle>;
 };
 
+/**
+ * Botão de voltar para a tela anterior.
+ */
 export function BackButton({ onPress, color = colors.text, style }: BackButtonProps) {
   const handlePress = () => {
     if (onPress) {

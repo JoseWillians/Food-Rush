@@ -1,6 +1,5 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -8,7 +7,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@/src/theme/colors";
@@ -19,12 +18,35 @@ import { useCart } from "@/src/contexts/CartContext";
 import { formatCurrency } from "@/src/utils/currency";
 import { Order } from "@/src/types";
 import { AppButton } from "@/src/components/ui/AppButton";
+import { EmptyState } from "@/src/components/ui/EmptyState";
+import { confirmDialog } from "@/src/utils/dialog";
+import { OrderStatus } from "@/src/types";
+
+// Texto mostrado em cada pedido conforme o status
+const STATUS_LABEL: Record<OrderStatus, string> = {
+  placed: "Aguardando a loja",
+  preparing: "Em preparo",
+  out_for_delivery: "A caminho da entrega",
+  arriving: "Chegando",
+  delivered: "Concluído",
+};
 
 type OrdersTab = "active" | "history";
 
+/**
+ * Aba Pedidos: pedidos em andamento e histórico do usuário.
+ * Permite acompanhar, avaliar e pedir de novo.
+ */
 export default function OrdersScreen() {
   const [activeTab, setActiveTab] = useState<OrdersTab>("active");
-  const { orders, setActiveOrder } = useOrders();
+  const { orders, setActiveOrder, reloadOrders } = useOrders();
+
+  // Relê os pedidos ao abrir a aba (a loja pode ter atualizado algum status)
+  useFocusEffect(
+    useCallback(() => {
+      reloadOrders();
+    }, [reloadOrders])
+  );
   const { items: cartItems, addItem, clearCart } = useCart();
 
   const filteredOrders = orders.filter((order) => {
@@ -34,44 +56,33 @@ export default function OrdersScreen() {
     return order.status === "delivered";
   });
 
-  const handleReorder = (order: Order) => {
-    Alert.alert(
+  // Coloca os itens de um pedido antigo de volta na sacola
+  const handleReorder = async (order: Order) => {
+    // O carrinho só aceita uma loja por vez
+    const outraLoja =
+      cartItems.length > 0 && cartItems[0].product.restaurantId !== order.restaurantId;
+
+    const adicionar = await confirmDialog(
       "Pedir novamente",
-      `Deseja adicionar os itens de ${order.restaurantName} à sua sacola?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Adicionar à sacola",
-          onPress: () => {
-            // Se já tiver itens de outro restaurante no carrinho, limpa para manter consistência
-            if (
-              cartItems.length > 0 &&
-              cartItems[0].product.restaurantId !== order.restaurantId
-            ) {
-              clearCart();
-            }
-
-            order.items.forEach((item) => {
-              for (let i = 0; i < item.quantity; i++) {
-                addItem(item.product);
-              }
-            });
-
-            Alert.alert(
-              "Itens adicionados!",
-              "Os produtos deste pedido estão na sua sacola de compras.",
-              [
-                { text: "Continuar aqui", style: "cancel" },
-                {
-                  text: "Ir para a Sacola",
-                  onPress: () => router.push("/cart"),
-                },
-              ]
-            );
-          },
-        },
-      ]
+      `Adicionar os itens de ${order.restaurantName} à sua sacola?` +
+        (outraLoja ? " Os itens de outra loja que estão na sacola serão removidos." : ""),
+      "Adicionar"
     );
+    if (!adicionar) return;
+
+    if (outraLoja) clearCart();
+    order.items.forEach((item) => {
+      for (let i = 0; i < item.quantity; i++) {
+        addItem(item.product);
+      }
+    });
+
+    const irParaSacola = await confirmDialog(
+      "Itens adicionados!",
+      "Os produtos deste pedido estão na sua sacola. Deseja ir para a sacola agora?",
+      "Ir para a sacola"
+    );
+    if (irParaSacola) router.push("/cart");
   };
 
   const handleReview = (order: Order) => {
@@ -115,22 +126,18 @@ export default function OrdersScreen() {
         showsVerticalScrollIndicator={false}
       >
         {filteredOrders.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="receipt-outline" size={56} color={colors.gray300} />
-            <Text style={styles.emptyTitle}>Nenhum pedido encontrado</Text>
-            <Text style={styles.emptySubtitle}>
-              {activeTab === "active"
-                ? "Você não possui pedidos em andamento no momento."
-                : "Seu histórico de pedidos está vazio."}
-            </Text>
-            <AppButton
-              title="Explorar Cardápio"
-              onPress={() => router.push("/(tabs)")}
-              variant="outline"
-              size="sm"
-              style={{ marginTop: spacing.md, minWidth: 160 }}
-            />
-          </View>
+          <EmptyState
+            icon={activeTab === "active" ? "bicycle-outline" : "receipt-outline"}
+            accentIcon={activeTab === "active" ? "time" : "document-text"}
+            title={activeTab === "active" ? "Nenhum pedido em andamento" : "Nenhum pedido no histórico"}
+            message={
+              activeTab === "active"
+                ? "Quando você fizer um pedido, poderá acompanhá-lo por aqui."
+                : "Os pedidos entregues ficam guardados aqui para você pedir de novo."
+            }
+            actionLabel="Explorar restaurantes"
+            onAction={() => router.push("/(tabs)")}
+          />
         ) : (
           filteredOrders.map((order) => {
             const isDelivered = order.status === "delivered";
@@ -188,7 +195,7 @@ export default function OrdersScreen() {
                           isDelivered && styles.statusTextDelivered,
                         ]}
                       >
-                        {isDelivered ? "Concluído" : "A caminho da entrega"}
+                        {STATUS_LABEL[order.status]}
                       </Text>
                     </View>
                     <Text style={styles.orderTotal}>
@@ -216,11 +223,18 @@ export default function OrdersScreen() {
                       <Pressable
                         style={styles.reviewQuickButton}
                         accessibilityRole="button"
-                        accessibilityLabel="Avaliar este pedido"
+                        accessibilityLabel={order.reviewed ? "Pedido já avaliado" : "Avaliar este pedido"}
                         onPress={() => handleReview(order)}
+                        disabled={order.reviewed}
                       >
-                        <Ionicons name="star-outline" size={16} color={colors.textSecondary} />
-                        <Text style={styles.reviewQuickButtonText}>Avaliar</Text>
+                        <Ionicons
+                          name={order.reviewed ? "star" : "star-outline"}
+                          size={16}
+                          color={order.reviewed ? colors.warning : colors.textSecondary}
+                        />
+                        <Text style={styles.reviewQuickButtonText}>
+                          {order.reviewed ? "Avaliado" : "Avaliar"}
+                        </Text>
                       </Pressable>
                     </>
                   ) : (

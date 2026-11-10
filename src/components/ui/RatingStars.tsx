@@ -16,6 +16,9 @@ export type RatingStarsProps = {
   inactiveColor?: string;
 };
 
+/**
+ * Estrelas de avaliação (de 0 a 5, com meia estrela).
+ */
 export function RatingStars({
   rating,
   maxStars = 5,

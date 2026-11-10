@@ -4,33 +4,68 @@ import { mockUser } from "@/src/mocks/user";
 import { STORAGE_KEYS, storageGet, storageRemove, storageSet } from "@/src/utils/storage";
 import { api } from "@/src/services/api";
 
+// Resultado das ações de login/cadastro. Quando dá errado, diz em qual campo
+// está o problema, para a tela mostrar a mensagem embaixo do campo certo.
+export type AuthResult =
+  | { ok: true }
+  | { ok: false; field: "email" | "password"; message: string };
+
+// Conta salva no aparelho. Como o app ainda não tem um backend de usuários,
+// as contas ficam no AsyncStorage. Num app real a senha ficaria no servidor,
+// guardada com hash, e nunca no celular.
+type StoredAccount = {
+  password: string;
+  user: User;
+};
+
+// Conta de demonstração que já vem pronta para testar o app
+export const DEMO_EMAIL = mockUser.email;
+export const DEMO_PASSWORD = "123456";
+
 type AuthContextData = {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  signIn: (email: string, password?: string) => Promise<void>;
-  signUp: (userData: Partial<User>) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<AuthResult>;
+  signUp: (userData: Partial<User>, password: string) => Promise<AuthResult>;
+  resetPassword: (email: string, newPassword: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
   updateUser: (userData: Partial<User>) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+async function loadAccounts(): Promise<StoredAccount[]> {
+  const stored = await storageGet<StoredAccount[] | null>(STORAGE_KEYS.ACCOUNTS, null);
+  if (stored) return stored;
+  // Primeira vez que o app abre: cria a conta de demonstração
+  const initial = [{ password: DEMO_PASSWORD, user: mockUser }];
+  await storageSet(STORAGE_KEYS.ACCOUNTS, initial);
+  return initial;
+}
+
+function findAccount(accounts: StoredAccount[], email: string) {
+  return accounts.find((a) => normalizeEmail(a.user.email) === normalizeEmail(email));
+}
+
+/**
+ * Contexto de autenticação: usuário logado, login, cadastro, redefinir senha,
+ * sair e atualizar dados. As contas ficam salvas no aparelho (AsyncStorage).
+ */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // Ao abrir o app, recupera quem estava logado. Se ninguém estava,
+    // o usuário fica null e a tela de login é exibida.
     async function loadStorageUser() {
       try {
+        await loadAccounts();
         const stored = await storageGet<User | null>(STORAGE_KEYS.AUTH_USER, null);
-        if (stored) {
-          setUser(stored);
-        } else {
-          // Usuário demo inicial logado para permitir navegação imediata de teste
-          setUser(mockUser);
-          await storageSet(STORAGE_KEYS.AUTH_USER, mockUser);
-        }
+        if (stored) setUser(stored);
       } finally {
         setIsLoading(false);
       }
@@ -38,49 +73,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadStorageUser();
   }, []);
 
-  const signIn = async (email: string) => {
-    const cleanEmail = email ? email.trim().toLowerCase() : "";
-    const isDemo =
-      !cleanEmail ||
-      cleanEmail === mockUser.email.toLowerCase() ||
-      cleanEmail === "cliente@foodrush.com";
+  const signIn = async (email: string, password: string): Promise<AuthResult> => {
+    const accounts = await loadAccounts();
+    const account = findAccount(accounts, email);
 
-    const userId = isDemo
-      ? mockUser.id
-      : `u-${cleanEmail.replace(/[^a-z0-9]/g, "_")}`;
+    if (!account) {
+      return { ok: false, field: "email", message: "Não existe conta com este e-mail." };
+    }
+    if (account.password !== password) {
+      return { ok: false, field: "password", message: "Senha incorreta." };
+    }
 
-    const loggedUser: User = isDemo
-      ? { ...mockUser, email: cleanEmail || mockUser.email }
-      : {
-          id: userId,
-          name: cleanEmail.split("@")[0] || "Cliente",
-          lastName: "",
-          email: cleanEmail,
-          phone: "",
-          address: "Endereço a cadastrar",
-          avatar: mockUser.avatar,
-          role: "customer",
-          addresses: [],
-          savedPaymentMethods: [],
-          notifications: {
-            orderUpdates: true,
-            promotions: true,
-            whatsappUpdates: true,
-          },
-        };
-
-    setUser(loggedUser);
-    await storageSet(STORAGE_KEYS.AUTH_USER, loggedUser);
+    setUser(account.user);
+    await storageSet(STORAGE_KEYS.AUTH_USER, account.user);
+    return { ok: true };
   };
 
-  const signUp = async (userData: Partial<User>) => {
+  const signUp = async (userData: Partial<User>, password: string): Promise<AuthResult> => {
+    const accounts = await loadAccounts();
+    const email = normalizeEmail(userData.email || "");
+
+    if (findAccount(accounts, email)) {
+      return { ok: false, field: "email", message: "Este e-mail já está cadastrado." };
+    }
+
     const newUser: User = {
       id: `u-${Date.now()}`,
       name: userData.name || "Novo Usuário",
       lastName: userData.lastName || "",
-      email: userData.email || "usuario@foodrush.com.br",
+      email,
       phone: userData.phone || "",
-      address: userData.address || "Endereço cadastrado",
+      address: userData.address || "Endereço a cadastrar",
       avatar: mockUser.avatar,
       role: userData.role || "customer",
       store: userData.store,
@@ -93,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     };
 
+    // Empreendedor: cria a loja uma única vez, já com o id que fica salvo no usuário
     if (newUser.store) {
       await api.registerPartner({
         id: newUser.store.id,
@@ -107,27 +131,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
+    await storageSet(STORAGE_KEYS.ACCOUNTS, [...accounts, { password, user: newUser }]);
     setUser(newUser);
     await storageSet(STORAGE_KEYS.AUTH_USER, newUser);
+    return { ok: true };
+  };
+
+  // Redefine a senha direto no aparelho (não há envio de e-mail nesta versão)
+  const resetPassword = async (email: string, newPassword: string): Promise<AuthResult> => {
+    const accounts = await loadAccounts();
+    const account = findAccount(accounts, email);
+    if (!account) {
+      return { ok: false, field: "email", message: "Não existe conta com este e-mail." };
+    }
+    account.password = newPassword;
+    await storageSet(STORAGE_KEYS.ACCOUNTS, accounts);
+    return { ok: true };
   };
 
   const updateUser = async (userData: Partial<User>) => {
-    setUser((prev) => {
-      const updated = prev ? { ...prev, ...userData } : ({ ...mockUser, ...userData } as User);
-      storageSet(STORAGE_KEYS.AUTH_USER, updated);
-      return updated;
-    });
+    if (!user) return;
+    const updated: User = { ...user, ...userData };
+    setUser(updated);
+    await storageSet(STORAGE_KEYS.AUTH_USER, updated);
 
-    if (userData.store) {
-      await api.registerPartner({
-        id: userData.store.id,
-        storeName: userData.store.name,
-        category: userData.store.category,
-        deliveryTime: userData.store.deliveryTime,
-        deliveryFee: userData.store.deliveryFee,
-        address: userData.store.address,
-        phone: userData.store.phone,
-      });
+    // Mantém a conta salva igual ao usuário logado (para não perder as mudanças no próximo login)
+    const accounts = await loadAccounts();
+    const index = accounts.findIndex((a) => a.user.id === updated.id);
+    if (index > -1) {
+      accounts[index] = { ...accounts[index], user: updated };
+      await storageSet(STORAGE_KEYS.ACCOUNTS, accounts);
     }
   };
 
@@ -144,6 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         signIn,
         signUp,
+        resetPassword,
         signOut,
         updateUser,
       }}
@@ -160,4 +194,3 @@ export function useAuth(): AuthContextData {
   }
   return context;
 }
-

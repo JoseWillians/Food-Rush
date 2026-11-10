@@ -6,12 +6,11 @@
 ![Expo](https://img.shields.io/badge/Expo_SDK-57.0-black?style=for-the-badge&logo=expo)
 ![React Native](https://img.shields.io/badge/React_Native-0.86.3-61DAFB?style=for-the-badge&logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue?style=for-the-badge&logo=typescript)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker)
+![Express](https://img.shields.io/badge/Express-5-000000?style=for-the-badge&logo=express)
 
 <p align="center">
-  <b>Aplicativo completo de delivery de refeições e gestão comercial para restaurantes e empreendedores.</b><br/>
-  Compatibilidade nativa total com <b>Expo Go</b> (Android e iOS) e arquitetura moderna com <b>Expo Router</b>.
+  <b>Aplicativo de delivery de refeições para clientes e empreendedores.</b><br/>
+  Feito com <b>Expo Router</b> e <b>TypeScript</b>, roda no <b>Expo Go</b>, no navegador e em emuladores.
 </p>
 
 </div>
@@ -20,148 +19,156 @@
 
 ## 📱 Visão Geral
 
-O **FOOD RUSH** foi desenvolvido para oferecer a melhor e mais rápida experiência gastronômica do mercado, conectando clientes famintos a restaurantes locais de excelência. Além do fluxo do consumidor final, o aplicativo conta com ecossistema completo para **Empreendedores**, permitindo cadastrar lojas, gerenciar cardápios e pratos, abrir/fechar estabelecimentos e receber pedidos em tempo real.
+O **FOOD RUSH** conecta clientes a restaurantes locais. O cliente escolhe a loja, monta o carrinho, finaliza o pedido e acompanha a entrega. O **empreendedor** cadastra a própria loja, monta o cardápio e recebe os pedidos pelo app.
+
+O app **funciona sem servidor**: os dados ficam salvos no aparelho (AsyncStorage). Quando o servidor (`server.js`) está ligado, o app também envia e busca os dados nele.
 
 ---
 
-## ✨ Principais Funcionalidades
+## ✨ Funcionalidades
 
-### 🛒 Para o Cliente
-- **Catálogo Gastronômico Inteligente:** Grid responsivo de restaurantes com filtros por tempo de entrega, avaliação mínima (4.8+) e taxa grátis.
-- **Busca em Tempo Real:** Filtragem instantânea por nome do prato, ingredientes ou categoria gastronômica.
-- **Detecção de Localização via GPS:** Barra inteligente com solicitação de permissão nativa (`expo-location`), geocodificação reversa para captura automática da rua, bairro e cidade.
-- **Carrinho de Compras Interativo:** Controle fino de quantidade, verificação de taxa de entrega e cálculo dinâmico de subtotal e total.
-- **Checkout Seguro:** Suporte a múltiplas formas de pagamento (Pix, Cartão de Crédito/Débito e Dinheiro), seleção de endereço padrão e cupom de desconto.
-- **Isolamento de Contas e Histórico Zerado:** Novos clientes iniciam com histórico de pedidos e lista de favoritos 100% limpos e individualizados por ID.
+### 👤 Conta
+- **Login com validação:** formato do e-mail, senha de no mínimo 6 caracteres, conta existente e senha correta.
+- **Cadastro** de cliente ou empreendedor: e-mail com formato válido, e-mail que ainda não está cadastrado, celular com máscara `(98) 99999-9999` e confirmação de senha. Cada erro aparece embaixo do campo.
+- **Esqueceu a senha:** redefine a senha no próprio aparelho, sem envio de e-mail.
+- **Perfil:** dados pessoais, foto, endereços, formas de pagamento e notificações.
 
-### 🏪 Para o Empreendedor (Minha Loja)
-- **Cadastro de Loja Comercial:** Escolha do tipo de perfil (`Empreendedor`) no cadastro ou diretamente na aba de Perfil.
-- **Painel da Loja no App:** Gestão completa dos dados do restaurante (nome, categoria, taxa e tempo médio de entrega).
-- **Cadastro de Pratos no Cardápio:** Adição de novos pratos com nome, preço, descrição detalhada dos ingredientes e categoria.
-- **Controle de Funcionamento:** Alternador em um toque para status **Aberta** (recebendo pedidos) ou **Fechada**.
-- **Sincronização em Tempo Real:** As lojas e pratos criados aparecem imediatamente no feed principal da Home e na navegação do app.
+> As contas ficam salvas no aparelho porque o projeto não tem um servidor de usuários. Num app real, a senha ficaria no servidor, protegida com hash.
 
-### 🗺️ Rastreamento & Mapa Interativo
-- **Permissão de GPS do Celular:** Solicitação amigável de autorização de uso de localização do dispositivo.
-- **Pinos Dinâmicos no Mapa:** Identificação visual da Loja Parceira, do Entregador com radar expansivo e do Cliente ("Você aqui").
-- **Simulação da Rota em Tempo Real:** Moto do entregador se deslocando pela rota planejada com telemetria ativa (distância restante e velocidade).
-- **Alternador Noturno / Satélite:** Visualização cartográfica adaptável para dia ou noite.
-- **Integração Externa com Apps de GPS:** Botão direto para traçar a rota real de navegação no **Google Maps, Waze ou Apple Maps**.
-- **Comunicação Direta:** Botões dedicados para chamada telefônica direta ao entregador ou abertura do chat integrado.
+### 🛒 Cliente
+- **Tela inicial:** busca, categorias, filtros rápidos e **ordenação** (melhor nota, mais rápido, mais barato). Os filtros escolhidos ficam salvos.
+- **Página da loja:** cardápio, avaliações da loja, favoritar a loja e favoritar pratos.
+- **Carrinho:** quantidade, **observação por item** ("sem cebola") e **taxa de entrega da própria loja**. Só aceita itens de uma loja por vez; para trocar de loja, o app pede confirmação.
+- **Checkout:** endereço de entrega, forma de pagamento (Pix, crédito, débito, dinheiro) e cupons (`FOODRUSH10`, `FRETEGRATIS`, `PRIMEIRACOMPRA`).
+- **Acompanhamento:** etapas do pedido (realizado → em preparo → saiu para entrega), mapa **simulado** com a moto do entregador e localização real do celular (`expo-location`).
+- **Chat do pedido:** conversa **simulada** com respostas automáticas. As mensagens ficam salvas por pedido.
+- **Avaliação:** estrelas e comentário. A nota média da loja é recalculada na hora.
+- **Pedidos e favoritos:** histórico, "pedir novamente" e listas de lojas e pratos favoritos.
+
+### 🏪 Empreendedor (tela "Minha Loja")
+- Cadastro da loja no cadastro de conta ou pelo perfil.
+- **Cardápio:** adicionar, **editar e excluir pratos**, com galeria de fotos e sugestão automática da foto pelo nome do prato.
+- **Dados da loja:** editar nome, categoria, tempo e taxa de entrega; **abrir ou fechar a loja** (loja fechada não recebe pedidos); **excluir a loja**.
+- **Pedidos recebidos:** aceitar o pedido, enviar para entrega e ver as observações de cada item.
 
 ---
 
-## 🏗️ Arquitetura & Estrutura de Pastas
+## 🏗️ Estrutura de Pastas
 
 ```bash
-meu-site/
-├── app/                          # Rotas estruturadas com Expo Router
-│   ├── _layout.tsx               # Provider principal (Auth, Cart, Favorites, Orders)
-│   ├── (tabs)/                   # Abas inferiores (Navegação com Safe Area)
-│   │   ├── index.tsx             # Home: Catálogo, GPS e Filtros
-│   │   ├── orders.tsx            # Pedidos: Em andamento e Histórico isolado
-│   │   ├── favorites.tsx         # Favoritos salvos pelo cliente
-│   │   └── profile.tsx           # Perfil do cliente e Painel do Empreendedor
-│   ├── auth/                     # Autenticação (Login e Cadastro com tipo de conta)
-│   ├── restaurant/[id].tsx       # Detalhes da loja parceira e cardápio
-│   ├── cart.tsx                  # Sacola de compras e resumo financeiro
-│   ├── checkout.tsx              # Finalização do pedido e escolha de pagamento
-│   └── order/
-│       ├── tracking.tsx          # Mapa interativo, GPS real e rastreamento
-│       ├── success.tsx           # Confirmação do pedido e status
-│       ├── review.tsx            # Avaliação de estrelas e comentários
-│       └── chat.tsx              # Chat em tempo real com a loja/entregador
-├── database/
-│   └── init.sql                  # Schema relacional PostgreSQL (8 tabelas + seeds)
+Food-Rush/
+├── app/                          # Telas (rotas do Expo Router)
+│   ├── _layout.tsx               # Layout raiz: fontes e Contexts (Auth, Cart, Favorites, Order)
+│   ├── index.tsx                 # Abertura: decide entre boas-vindas, login ou início
+│   ├── onboarding/               # Telas de boas-vindas
+│   ├── auth/login.tsx            # Login, cadastro e redefinição de senha
+│   ├── (tabs)/                   # Abas: Início, Pedidos, Favoritos e Perfil
+│   ├── restaurant/[id].tsx       # Página da loja (cardápio e avaliações)
+│   ├── cart.tsx                  # Carrinho
+│   ├── checkout.tsx              # Finalização do pedido
+│   ├── order/                    # Acompanhamento, chat, avaliação e sucesso
+│   └── store/                    # Painel do empreendedor e pedidos da loja
 ├── src/
-│   ├── components/ui/            # Componentes reutilizáveis (Buttons, Inputs, Cards)
-│   ├── contexts/                 # Context API isolada (Auth, Cart, Favorites, Order)
-│   ├── mocks/                    # Dados de inicialização e fallback transparente
-│   ├── services/                 # Cliente API com suporte a storage local e servidor
-│   ├── theme/                    # Design System (Cores, Tipografia Poppins, Spacing)
-│   ├── types/                    # Definições estritas de tipos em TypeScript
-│   └── utils/                    # Formatadores de moeda, storage e helpers
-├── docker-compose.yml            # Orquestração do PostgreSQL 16 e API REST
-├── Dockerfile                    # Contêiner Node.js 20 Alpine para backend
-├── server.js                     # Servidor Express REST com endpoints completos
-└── app.json                      # Configuração Expo SDK 57 e plugins nativos
+│   ├── components/
+│   │   ├── ui/                   # Botão, campo de texto, cabeçalho, BottomSheet, EmptyState...
+│   │   ├── checkout/             # Partes do checkout (endereço, pagamento, cupom, resumo)
+│   │   ├── profile/              # Janelas do perfil (dados, endereços, pagamentos...)
+│   │   └── tracking/             # Mapa, entregador e linha do tempo do pedido
+│   ├── constants/                # Categorias de loja e galeria de fotos de comida
+│   ├── contexts/                 # Estado global: Auth, Cart, Favorites e Order
+│   ├── hooks/                    # useDeviceLocation (GPS do celular)
+│   ├── mocks/                    # Dados locais (lidos de database/seed.json)
+│   ├── services/api.ts           # Acesso aos dados: servidor com reserva local
+│   ├── theme/                    # Cores, espaçamentos e tipografia (Poppins)
+│   ├── types/                    # Tipos TypeScript
+│   └── utils/                    # Validação, preços/cupons, diálogos, armazenamento
+├── database/
+│   ├── seed.json                 # Lojas, pratos, categorias e avaliações (app e servidor)
+│   └── init.sql                  # Esquema PostgreSQL (8 tabelas) — ainda não usado pelo servidor
+├── tests/pricing.test.ts         # Testes dos cálculos de total e cupom
+├── server.js                     # Servidor Express (API REST)
+├── .env.example                  # Modelo das variáveis de ambiente
+├── Dockerfile / docker-compose.yml
+└── app.json                      # Configuração do Expo
 ```
 
 ---
 
-## 🚀 Como Executar o Projeto
+## 🚀 Como Executar
 
 ### 1. Pré-requisitos
-- [Node.js](https://nodejs.org/) (versão 18 ou 20 LTS)
-- [npm](https://www.npmjs.com/) ou [yarn](https://yarnpkg.com/)
-- Aplicativo **Expo Go** instalado no smartphone ([Android na Play Store](https://play.google.com/store/apps/details?id=host.exp.exponent) ou [iOS na App Store](https://apps.apple.com/app/expo-go/id982107779))
-- *(Opcional)* [Docker](https://www.docker.com/) para executar o banco PostgreSQL e a API em contêineres
+- [Node.js](https://nodejs.org/) 22.18 ou mais recente (para rodar os testes em TypeScript sem instalar nada a mais)
+- App **Expo Go** no celular ([Android](https://play.google.com/store/apps/details?id=host.exp.exponent) / [iOS](https://apps.apple.com/app/expo-go/id982107779))
+- *(Opcional)* [Docker](https://www.docker.com/)
+
+> **Versão do Expo Go:** o projeto usa a **SDK 57**. O Expo Go precisa ser compatível com essa SDK. No iPhone, a App Store só oferece a versão mais recente do Expo Go; se ela for de outra SDK, use a versão web ou atualize o projeto para a mesma SDK.
+
+### 2. App
+
+```bash
+npm install
+npx expo start
+```
+
+- **Celular:** leia o QR Code com o Expo Go (o celular e o computador precisam estar na mesma rede Wi-Fi).
+- **Navegador:** pressione `w` no terminal ou rode `npm run web`.
+- **Emulador:** `a` (Android) ou `i` (iOS).
+
+### 3. Servidor (opcional)
+
+O app funciona sem ele. Para ligar o servidor, em outro terminal:
+
+```bash
+npm run server
+```
+
+O servidor sobe em `http://localhost:3000`. No Expo Go, o app descobre sozinho o IP do computador. Se o servidor estiver em outro endereço, crie o arquivo `.env` a partir do exemplo e preencha `EXPO_PUBLIC_API_URL`:
+
+```bash
+cp .env.example .env
+```
+
+**Principais rotas:** `GET /api/restaurants`, `GET /api/products?restaurantId=`, `GET|POST /api/restaurants/:id/reviews`, `POST /api/partners/register`, `PUT|DELETE /api/restaurants/:id`, `PATCH /api/restaurants/:id/status`, `POST /api/restaurants/:id/products`, `PUT|DELETE /api/products/:id`, `GET|POST /api/orders`, `PATCH /api/orders/:id/status`.
+
+> O servidor guarda os dados **em memória**, carregados de `database/seed.json`. Ao reiniciar, as alterações somem. Se `DATABASE_URL` estiver configurada, ele apenas testa a conexão com o PostgreSQL. As consultas ao banco ainda não foram implementadas.
+
+### 4. Docker (opcional)
+
+```bash
+cp .env.example .env
+docker compose up -d        # sobe o PostgreSQL e o servidor
+docker compose logs -f      # acompanha os logs
+docker compose down         # desliga
+```
+
+### 5. Testes
+
+```bash
+npm test
+```
+
+Roda os testes de `tests/` com o test runner do próprio Node: subtotal, total, cupons de valor fixo e de frete grátis, cupom inválido e total que não fica negativo.
 
 ---
 
-### 2. Executando o App Mobile
-
-1. Instale as dependências:
-   ```bash
-   npm install
-   ```
-
-2. Inicie o servidor Metro do Expo:
-   ```bash
-   npx expo start
-   ```
-
-3. Abra o app no celular:
-   - **Android:** Abra o aplicativo **Expo Go** e escaneie o QR Code exibido no terminal.
-   - **iOS:** Abra a câmera nativa do iPhone, aponte para o QR Code e toque no link para abrir no Expo Go.
-   - **Web / Emulador:** Pressione `w` para abrir no navegador, `a` para emulador Android ou `i` para simulador iOS.
-
----
-
-### 3. Executando o Banco de Dados e API via Docker (Opcional)
-
-O Food Rush conta com **fallback inteligente**: o aplicativo mobile funciona com persistência 100% autônoma via AsyncStorage mesmo sem o backend rodando. Caso deseje subir o banco de dados relacional e a API completa em Docker:
-
-1. Configure as variáveis de ambiente baseadas no exemplo:
-   ```bash
-   cp .env.example .env
-   ```
-
-2. Suba os contêineres do banco PostgreSQL e da API REST:
-   ```bash
-   docker compose up -d
-   ```
-
-3. Para verificar os logs dos serviços:
-   ```bash
-   docker compose logs -f
-   ```
-
-4. Para parar os contêineres:
-   ```bash
-   docker compose down
-   ```
-
----
-
-## 🛠️ Stack Tecnológica
+## 🛠️ Tecnologias
 
 | Camada | Tecnologia |
 |---|---|
-| **Framework Mobile** | React Native 0.86.3 com Expo SDK 57 |
-| **Navegação & Roteamento** | Expo Router 57 (File-based routing) |
-| **Linguagem** | TypeScript 6.0 com checagem estrita |
-| **Localização & GPS** | Expo Location (`expo-location`) |
-| **Persistência Local** | `@react-native-async-storage/async-storage` |
-| **Design & UI** | Google Fonts Poppins, Safe Area Context, Vector Icons |
-| **Backend API** | Node.js 20, Express 5 REST API |
-| **Banco de Dados** | PostgreSQL 16 Relacional com índices e constraints |
-| **Containerização** | Docker & Docker Compose |
+| **Mobile** | React Native 0.86 com Expo SDK 57 |
+| **Navegação** | Expo Router (rotas por arquivos) |
+| **Linguagem** | TypeScript (modo estrito) |
+| **Estado global** | React Context API |
+| **Armazenamento local** | AsyncStorage |
+| **Localização** | expo-location |
+| **Interface** | Fonte Poppins, Ionicons, Safe Area Context |
+| **Servidor** | Node.js + Express 5 |
+| **Banco (preparado)** | PostgreSQL 16 via Docker, esquema em `database/init.sql` |
+| **Testes** | `node:test` (test runner nativo do Node) |
 
 ---
 
 ## 📄 Licença
 
-Este projeto é desenvolvido para fins comerciais e de portfólio por [Jose Willians](https://github.com/JoseWillians).
+Este projeto é desenvolvido para fins comerciais e de portfólio por Jose Willians, Paulo Leão, André Lucas, Lucas Eduardo, Luis Felipe e Policarpo Sousa.
 Todos os direitos reservados.
-
