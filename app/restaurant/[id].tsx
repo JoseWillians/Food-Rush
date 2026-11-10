@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
@@ -7,7 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@/src/theme/colors";
@@ -15,52 +16,118 @@ import { borderRadius, spacing } from "@/src/theme/spacing";
 import { fontSizes, typography } from "@/src/theme/typography";
 import { mockRestaurants } from "@/src/mocks/restaurants";
 import { mockProducts } from "@/src/mocks/products";
-import { mockReviews } from "@/src/mocks/reviews";
 import { useCart } from "@/src/contexts/CartContext";
 import { useFavorites } from "@/src/contexts/FavoritesContext";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { RatingStars } from "@/src/components/ui/RatingStars";
 import { BackButton } from "@/src/components/ui/BackButton";
+import { AppButton } from "@/src/components/ui/AppButton";
 import { formatCurrency } from "@/src/utils/currency";
 import { api } from "@/src/services/api";
-import { Product, Restaurant } from "@/src/types";
+import { confirmDialog, showMessage } from "@/src/utils/dialog";
+import { Product, Restaurant, Review } from "@/src/types";
 
 type RestaurantTab = "menu" | "reviews";
 
+/**
+ * Página da loja: cardápio, avaliações, favoritar e adicionar ao carrinho.
+ * O [id] no nome do arquivo é o id da loja, vindo da rota (useLocalSearchParams).
+ */
 export default function RestaurantDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState<RestaurantTab>("menu");
 
-  const [restaurant, setRestaurant] = useState<Restaurant>(() => {
-    return mockRestaurants.find((r) => r.id === id) || mockRestaurants[0];
-  });
-  const [products, setProducts] = useState<Product[]>(() => {
-    return mockProducts.filter((p) => p.restaurantId === id || id === "1");
-  });
+  // Começa com os dados locais (mocks) para a tela abrir rápido.
+  // Lojas criadas pelo empreendedor não estão nos mocks: nesse caso começa como null.
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(
+    () => mockRestaurants.find((r) => r.id === id) ?? null
+  );
+  // Só os pratos desta loja
+  const [products, setProducts] = useState<Product[]>(() =>
+    mockProducts.filter((p) => p.restaurantId === id)
+  );
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  React.useEffect(() => {
-    async function loadData() {
-      if (!id) return;
-      try {
-        const found = await api.getRestaurantById(id);
-        if (found) {
-          setRestaurant(found);
-        }
-        const prods = await api.getProducts(id);
-        if (prods && prods.length > 0) {
+  const { user } = useAuth();
+  const { addItem, clearCart, total, itemCount, cartRestaurant, isFromAnotherStore } = useCart();
+  const { isFavorite, toggleFavorite, isFavoriteProduct, toggleFavoriteProduct } = useFavorites();
+
+  // Recarrega sempre que a tela ganha foco. Assim, se o dono cadastrar um prato
+  // ou o cliente enviar uma avaliação, a tela já aparece atualizada ao voltar.
+  useFocusEffect(
+    useCallback(() => {
+      let ativo = true; // evita atualizar o estado se o usuário já saiu da tela
+
+      async function loadData() {
+        if (!id) return;
+        try {
+          const [found, prods, revs] = await Promise.all([
+            api.getRestaurantById(id),
+            api.getProducts(id),
+            api.getReviews(id),
+          ]);
+          if (!ativo) return;
+          if (found) setRestaurant(found);
           setProducts(prods);
+          setReviews(revs);
+        } catch {
+          // Em caso de erro mantém os dados locais já exibidos
+        } finally {
+          if (ativo) setLoading(false);
         }
-      } catch {
-        // Fallback silencioso
       }
-    }
-    loadData();
-  }, [id]);
 
-  const { addItem, items, total, itemCount } = useCart();
-  const { isFavorite, toggleFavorite } = useFavorites();
+      loadData();
+      return () => {
+        ativo = false;
+      };
+    }, [id])
+  );
+
+  // Ainda buscando uma loja criada pelo empreendedor (ou ela não existe)
+  if (!restaurant) {
+    return (
+      <SafeAreaView style={[styles.container, styles.centered]}>
+        {loading ? (
+          <ActivityIndicator size="large" color={colors.primary} />
+        ) : (
+          <View style={styles.emptyState}>
+            <Ionicons name="storefront-outline" size={48} color={colors.gray400} />
+            <Text style={styles.emptyTitle}>Loja não encontrada</Text>
+            <AppButton title="Voltar" variant="outline" onPress={() => router.back()} />
+          </View>
+        )}
+      </SafeAreaView>
+    );
+  }
 
   const isFav = isFavorite(restaurant.id);
+  // Loja fechada não aceita pedidos (lojas sem essa informação contam como abertas)
+  const isClosed = restaurant.isOpen === false;
+
+  const handleAddProduct = async (product: Product) => {
+    if (isClosed) {
+      showMessage("Loja fechada", "Esta loja não está recebendo pedidos agora.");
+      return;
+    }
+    // O carrinho só pode ter itens de uma loja, porque cada pedido vai para um restaurante
+    if (isFromAnotherStore(product)) {
+      const outraLoja = cartRestaurant?.name ?? "outra loja";
+      const trocar = await confirmDialog(
+        "Trocar de loja?",
+        `Seu carrinho tem itens de ${outraLoja}. Para pedir em ${restaurant.name}, o carrinho atual será esvaziado.`,
+        "Esvaziar e adicionar",
+        true
+      );
+      if (!trocar) return;
+      clearCart();
+    }
+    addItem(product);
+  };
+  // O usuário logado é o dono desta loja?
+  const isOwner = user?.store?.id === restaurant.id;
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -99,16 +166,36 @@ export default function RestaurantDetailScreen() {
           <View style={styles.metaRow}>
             <View style={styles.ratingBadge}>
               <Ionicons name="star" size={14} color={colors.warning} />
-              <Text style={styles.ratingText}>{restaurant.rating.toFixed(1)}</Text>
-              <Text style={styles.reviewCount}>
-                ({restaurant.reviewCount} avaliações)
-              </Text>
+              {restaurant.reviewCount === 0 ? (
+                <Text style={styles.ratingText}>Novo</Text>
+              ) : (
+                <>
+                  <Text style={styles.ratingText}>{restaurant.rating.toFixed(1)}</Text>
+                  <Text style={styles.reviewCount}>
+                    ({restaurant.reviewCount} avaliações)
+                  </Text>
+                </>
+              )}
             </View>
             <Text style={styles.metaDivider}>·</Text>
             <Text style={styles.metaText}>{restaurant.deliveryTime}</Text>
             <Text style={styles.metaDivider}>·</Text>
             <Text style={styles.metaText}>{restaurant.priceRange}</Text>
           </View>
+
+          <Text style={styles.feeText}>
+            Taxa de entrega:{" "}
+            {restaurant.deliveryFee > 0 ? formatCurrency(restaurant.deliveryFee) : "Grátis"}
+          </Text>
+
+          {isClosed && (
+            <View style={styles.closedBanner}>
+              <Ionicons name="lock-closed" size={16} color={colors.error} />
+              <Text style={styles.closedBannerText}>
+                Loja fechada no momento. Você pode ver o cardápio, mas não pode fazer pedidos.
+              </Text>
+            </View>
+          )}
 
           {/* Abas Internas: Cardápio | Avaliações */}
           <View style={styles.tabsRow}>
@@ -148,56 +235,113 @@ export default function RestaurantDetailScreen() {
           {activeTab === "menu" ? (
             /* Cardápio */
             <View style={styles.menuSection}>
-              {products.map((product) => (
-                <View key={product.id} style={styles.productCard}>
-                  <View style={styles.productDetails}>
-                    <Text style={styles.productName}>{product.name}</Text>
-                    <Text style={styles.productDesc} numberOfLines={2}>
-                      {product.description}
-                    </Text>
-                    <Text style={styles.productPrice}>
-                      {formatCurrency(product.price)}
-                    </Text>
-                  </View>
-
-                  <View style={styles.productImageWrapper}>
-                    <Image
-                      source={{ uri: product.image }}
-                      style={styles.productImage}
+              {products.length === 0 && loading ? (
+                <ActivityIndicator color={colors.primary} style={styles.loader} />
+              ) : products.length === 0 ? (
+                // Estado vazio: a loja ainda não tem pratos
+                <View style={styles.emptyState}>
+                  <Ionicons name="restaurant-outline" size={44} color={colors.gray400} />
+                  <Text style={styles.emptyTitle}>
+                    Esta loja ainda não cadastrou pratos
+                  </Text>
+                  <Text style={styles.emptyText}>
+                    {isOwner
+                      ? "Cadastre o primeiro prato para os clientes poderem pedir."
+                      : "Volte mais tarde para conferir o cardápio."}
+                  </Text>
+                  {isOwner && (
+                    <AppButton
+                      title="Adicionar pratos"
+                      onPress={() => router.push("/store")}
                     />
-                    <Pressable
-                      style={styles.addButton}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Adicionar ${product.name} ao carrinho`}
-                      onPress={() => addItem(product)}
-                      hitSlop={8}
-                    >
-                      <Ionicons name="add" size={20} color={colors.white} />
-                    </Pressable>
-                  </View>
+                  )}
                 </View>
-              ))}
+              ) : (
+                products.map((product) => (
+                  <View key={product.id} style={styles.productCard}>
+                    <View style={styles.productDetails}>
+                      <Text style={styles.productName}>{product.name}</Text>
+                      <Text style={styles.productDesc} numberOfLines={2}>
+                        {product.description}
+                      </Text>
+                      <View style={styles.priceRow}>
+                        <Text style={styles.productPrice}>
+                          {formatCurrency(product.price)}
+                        </Text>
+                        {/* Favoritar o prato (aparece na aba Favoritos > Pratos) */}
+                        <Pressable
+                          onPress={() => toggleFavoriteProduct(product)}
+                          hitSlop={10}
+                          accessibilityRole="button"
+                          accessibilityLabel={
+                            isFavoriteProduct(product.id)
+                              ? `Remover ${product.name} dos favoritos`
+                              : `Favoritar ${product.name}`
+                          }
+                        >
+                          <Ionicons
+                            name={isFavoriteProduct(product.id) ? "heart" : "heart-outline"}
+                            size={20}
+                            color={isFavoriteProduct(product.id) ? colors.primary : colors.gray400}
+                          />
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    <View style={styles.productImageWrapper}>
+                      <Image
+                        source={{ uri: product.image }}
+                        style={styles.productImage}
+                      />
+                      <Pressable
+                        style={[styles.addButton, isClosed && styles.addButtonDisabled]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Adicionar ${product.name} ao carrinho`}
+                        accessibilityState={{ disabled: isClosed }}
+                        onPress={() => handleAddProduct(product)}
+                        hitSlop={8}
+                      >
+                        <Ionicons name="add" size={20} color={colors.white} />
+                      </Pressable>
+                    </View>
+                  </View>
+                ))
+              )}
             </View>
           ) : (
-            /* Avaliações */
+            /* Avaliações desta loja */
             <View style={styles.reviewsSection}>
-              {mockReviews.map((review) => (
-                <View key={review.id} style={styles.reviewCard}>
-                  <View style={styles.reviewHeader}>
-                    <View style={styles.userAvatarSmall}>
-                      <Text style={styles.userInitial}>
-                        {review.userName[0]}
-                      </Text>
-                    </View>
-                    <View style={styles.reviewHeaderInfo}>
-                      <Text style={styles.reviewAuthor}>{review.userName}</Text>
-                      <Text style={styles.reviewDate}>{review.date}</Text>
-                    </View>
-                    <RatingStars rating={review.rating} size={14} />
-                  </View>
-                  <Text style={styles.reviewComment}>{review.comment}</Text>
+              {reviews.length === 0 && loading ? (
+                <ActivityIndicator color={colors.primary} style={styles.loader} />
+              ) : reviews.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={44} color={colors.gray400} />
+                  <Text style={styles.emptyTitle}>Ainda sem avaliações</Text>
+                  <Text style={styles.emptyText}>
+                    Faça um pedido e seja o primeiro a avaliar esta loja.
+                  </Text>
                 </View>
-              ))}
+              ) : (
+                reviews.map((review) => (
+                  <View key={review.id} style={styles.reviewCard}>
+                    <View style={styles.reviewHeader}>
+                      <View style={styles.userAvatarSmall}>
+                        <Text style={styles.userInitial}>
+                          {review.userName[0]}
+                        </Text>
+                      </View>
+                      <View style={styles.reviewHeaderInfo}>
+                        <Text style={styles.reviewAuthor}>{review.userName}</Text>
+                        <Text style={styles.reviewDate}>{review.date}</Text>
+                      </View>
+                      <RatingStars rating={review.rating} size={14} />
+                    </View>
+                    {review.comment ? (
+                      <Text style={styles.reviewComment}>{review.comment}</Text>
+                    ) : null}
+                  </View>
+                ))
+              )}
             </View>
           )}
         </View>
@@ -492,6 +636,61 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontFamily: typography.semiBold,
     fontSize: fontSizes.sm,
+  },
+  priceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  feeText: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  closedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.primaryLight,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginTop: spacing.md,
+  },
+  closedBannerText: {
+    flex: 1,
+    fontSize: fontSizes.sm,
+    fontFamily: typography.medium,
+    color: colors.error,
+  },
+  addButtonDisabled: {
+    backgroundColor: colors.gray400,
+  },
+  centered: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loader: {
+    marginVertical: spacing.xl,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
+  },
+  emptyTitle: {
+    fontSize: fontSizes.md,
+    fontFamily: typography.bold,
+    color: colors.text,
+    textAlign: "center",
+  },
+  emptyText: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginBottom: spacing.xs,
   },
 });
 

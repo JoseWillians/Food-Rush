@@ -19,6 +19,10 @@ import { colors } from "@/src/theme/colors";
 
 SplashScreen.preventAutoHideAsync();
 
+/**
+ * Layout raiz do app: carrega as fontes e envolve todas as telas com os
+ * Contexts (Auth, Cart, Favorites e Order), que guardam o estado global.
+ */
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Poppins_400Regular,
@@ -69,6 +73,8 @@ export default function RootLayout() {
                 <Stack.Screen name="order/chat" />
                 <Stack.Screen name="order/success" />
                 <Stack.Screen name="order/review" />
+                <Stack.Screen name="store/index" />
+                <Stack.Screen name="store/orders" />
               </Stack>
             </OrderProvider>
           </FavoritesProvider>

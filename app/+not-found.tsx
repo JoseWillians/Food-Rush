@@ -2,6 +2,9 @@ import { Link, Stack } from 'expo-router';
 import { Text, View, StyleSheet } from 'react-native';
 import { colors } from '@/src/theme/colors';
 
+/**
+ * Tela mostrada quando o endereço (rota) não existe.
+ */
 export default function NotFoundScreen() {
   return (
     <>

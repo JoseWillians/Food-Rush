@@ -6,6 +6,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@/src/theme/colors";
 import { typography } from "@/src/theme/typography";
 
+/**
+ * Barra de abas inferior (Início, Pedidos, Favoritos e Perfil).
+ */
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
 

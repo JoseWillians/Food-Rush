@@ -19,7 +19,11 @@ import { Header } from "@/src/components/ui/Header";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { RatingStars } from "@/src/components/ui/RatingStars";
 import { useOrders } from "@/src/contexts/OrderContext";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { formatCurrency } from "@/src/utils/currency";
+import { api } from "@/src/services/api";
+import { showMessage } from "@/src/utils/dialog";
+import { Review } from "@/src/types";
 
 const COMPLIMENT_TAGS = [
   "Comida quentinha",
@@ -30,8 +34,13 @@ const COMPLIMENT_TAGS = [
   "Entregador educado",
 ];
 
+/**
+ * Avaliação do pedido: estrelas, elogios e comentário.
+ * Ao enviar, salva a avaliação e recalcula a nota média da loja (api.addReview).
+ */
 export default function OrderReviewScreen() {
-  const { activeOrder, orders } = useOrders();
+  const { activeOrder, orders, markOrderAsReviewed } = useOrders();
+  const { user } = useAuth();
 
   // Pega o pedido atual ou o mais recente entregue
   const targetOrder =
@@ -47,6 +56,7 @@ export default function OrderReviewScreen() {
   ]);
   const [comment, setComment] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -54,18 +64,57 @@ export default function OrderReviewScreen() {
     );
   };
 
-  const handleSubmit = () => {
-    setSubmitted(true);
+  // Salva a avaliação e atualiza a nota da loja
+  const handleSubmit = async () => {
+    if (!targetOrder) {
+      showMessage("Nenhum pedido", "Não encontramos um pedido para avaliar.");
+      return;
+    }
+    if (restaurantRating < 1) {
+      showMessage("Atenção", "Escolha de 1 a 5 estrelas para a comida.");
+      return;
+    }
+
+    // Se o cliente não escreveu comentário, usamos os elogios marcados
+    const texto = comment.trim() || selectedTags.join(" · ");
+
+    const review: Review = {
+      id: `rev-${Date.now()}`,
+      restaurantId: targetOrder.restaurantId,
+      orderId: targetOrder.id,
+      userName: user ? `${user.name} ${user.lastName || ""}`.trim() : "Cliente",
+      rating: restaurantRating,
+      comment: texto,
+      date: new Date().toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }),
+    };
+
+    setSending(true);
+    try {
+      await api.addReview(review);
+      markOrderAsReviewed(targetOrder.id);
+      setSubmitted(true);
+    } catch {
+      showMessage("Erro", "Não foi possível enviar sua avaliação. Tente novamente.");
+    } finally {
+      setSending(false);
+    }
   };
 
-  if (submitted) {
+  // Mostra a tela de agradecimento depois de enviar, ou se o pedido já foi avaliado antes
+  if (submitted || targetOrder?.reviewed) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.successContent}>
           <View style={styles.successIcon}>
             <Ionicons name="heart-circle" size={88} color={colors.primary} />
           </View>
-          <Text style={styles.successTitle}>Obrigado pela sua avaliação!</Text>
+          <Text style={styles.successTitle}>
+            {submitted ? "Obrigado pela sua avaliação!" : "Pedido já avaliado"}
+          </Text>
           <Text style={styles.successSubtitle}>
             Sua opinião nos ajuda a manter a melhor experiência gastronômica e entrega ultra rápida no Food Rush!
           </Text>
@@ -104,7 +153,7 @@ export default function OrderReviewScreen() {
           {/* Card do Pedido com Dados Reais */}
           <View style={styles.orderSummaryCard}>
             <Text style={styles.restaurantName}>
-              {targetOrder?.restaurantName || "Burger House"}
+              {targetOrder?.restaurantName || "Pedido não encontrado"}
             </Text>
             <Text style={styles.orderValue}>
               Total do pedido:{" "}
@@ -196,6 +245,8 @@ export default function OrderReviewScreen() {
           <AppButton
             title="Enviar Avaliação"
             onPress={handleSubmit}
+            loading={sending}
+            disabled={sending || !targetOrder}
             size="lg"
           />
         </View>

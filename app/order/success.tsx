@@ -8,6 +8,9 @@ import { spacing } from "@/src/theme/spacing";
 import { fontSizes, typography } from "@/src/theme/typography";
 import { AppButton } from "@/src/components/ui/AppButton";
 
+/**
+ * Tela de pedido entregue, com atalho para avaliar.
+ */
 export default function OrderSuccessScreen() {
   return (
     <SafeAreaView style={styles.container}>

@@ -9,6 +9,7 @@ export type Restaurant = {
   deliveryTime: string;
   deliveryFee: number;
   favorite?: boolean;
+  isOpen?: boolean; // false = loja fechada (não aceita pedidos)
 };
 
 export type Product = {
@@ -23,6 +24,8 @@ export type Product = {
 
 export type Review = {
   id: string;
+  restaurantId: string; // loja que recebeu a avaliação
+  orderId?: string; // pedido avaliado (só nas avaliações feitas pelo app)
   userName: string;
   avatar?: string;
   rating: number;
@@ -41,6 +44,7 @@ export type CartItem = {
   id: string;
   product: Product;
   quantity: number;
+  note?: string; // observação do cliente, ex.: "sem cebola"
 };
 
 export type PaymentMethod = "pix" | "credit" | "debit" | "cash";
@@ -61,6 +65,9 @@ export type Order = {
   courierName?: string;
   courierRating?: number;
   estimatedTime?: string;
+  reviewed?: boolean; // true depois que o cliente avalia o pedido
+  customerId?: string; // quem fez o pedido (usado no painel do empreendedor)
+  customerName?: string;
 };
 
 export type UserAddress = {
@@ -114,6 +121,29 @@ export type User = {
   addresses?: UserAddress[];
   savedPaymentMethods?: SavedPaymentMethod[];
   notifications?: NotificationPreferences;
+};
+
+// Dados enviados ao cadastrar uma loja de empreendedor
+export type PartnerRegistration = {
+  id?: string;
+  storeName: string;
+  category: string;
+  deliveryTime?: string;
+  deliveryFee?: number;
+  address?: string;
+  phone?: string;
+  image?: string;
+  ownerName?: string;
+  ownerEmail?: string;
+};
+
+// Dados de um prato novo enviados pelo empreendedor
+export type NewProductInput = {
+  name: string;
+  price: number;
+  description?: string;
+  category?: string;
+  image?: string;
 };
 
 export type Category = {

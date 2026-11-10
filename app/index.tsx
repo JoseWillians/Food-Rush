@@ -9,10 +9,18 @@ import { fontSizes, typography } from "@/src/theme/typography";
 import { STORAGE_KEYS, storageGet } from "@/src/utils/storage";
 import { useAuth } from "@/src/contexts/AuthContext";
 
+/**
+ * Tela de abertura (splash). Espera o AuthContext carregar e decide para onde ir:
+ * boas-vindas (primeira vez), login (sem usuário) ou tela inicial (já logado).
+ */
 export default function SplashScreen() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
 
   useEffect(() => {
+    // Espera o AuthContext terminar de ler o usuário salvo. Sem isso, a tela
+    // poderia decidir o caminho antes de saber se alguém está logado.
+    if (isLoading) return;
+
     const timer = setTimeout(async () => {
       const onboardingCompleted = await storageGet<boolean>(
         STORAGE_KEYS.ONBOARDING_COMPLETED,
@@ -29,7 +37,7 @@ export default function SplashScreen() {
     }, 1800);
 
     return () => clearTimeout(timer);
-  }, [user]);
+  }, [user, isLoading]);
 
   return (
     <View style={styles.container}>

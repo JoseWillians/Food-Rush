@@ -1,0 +1,362 @@
+{
+  "categories": [
+    { "id": "1", "name": "Lanches", "icon": "fast-food-outline" },
+    { "id": "2", "name": "Pizza", "icon": "pizza-outline" },
+    { "id": "3", "name": "Sushi", "icon": "fish-outline" },
+    { "id": "4", "name": "Brasileira", "icon": "restaurant-outline" },
+    { "id": "5", "name": "Italiano", "icon": "wine-outline" }
+  ],
+  "restaurants": [
+    {
+      "id": "1",
+      "name": "Burger House",
+      "image": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600&auto=format&fit=crop&q=80",
+      "category": "Lanches",
+      "priceRange": "$$",
+      "rating": 4.8,
+      "reviewCount": 1245,
+      "deliveryTime": "30-45 min",
+      "deliveryFee": 5.99,
+      "favorite": true
+    },
+    {
+      "id": "2",
+      "name": "Pizza Bella",
+      "image": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&auto=format&fit=crop&q=80",
+      "category": "Pizza",
+      "priceRange": "$$$",
+      "rating": 4.9,
+      "reviewCount": 890,
+      "deliveryTime": "40-55 min",
+      "deliveryFee": 7.5,
+      "favorite": false
+    },
+    {
+      "id": "3",
+      "name": "Sushi Master",
+      "image": "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=600&auto=format&fit=crop&q=80",
+      "category": "Sushi",
+      "priceRange": "$$$$",
+      "rating": 4.7,
+      "reviewCount": 654,
+      "deliveryTime": "45-60 min",
+      "deliveryFee": 9.99,
+      "favorite": false
+    },
+    {
+      "id": "4",
+      "name": "Sabor da Terra",
+      "image": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=600&auto=format&fit=crop&q=80",
+      "category": "Brasileira",
+      "priceRange": "$$",
+      "rating": 4.6,
+      "reviewCount": 432,
+      "deliveryTime": "25-40 min",
+      "deliveryFee": 4.5,
+      "favorite": false
+    },
+    {
+      "id": "5",
+      "name": "Cantina d'Italia",
+      "image": "https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=600&auto=format&fit=crop&q=80",
+      "category": "Italiano",
+      "priceRange": "$$$",
+      "rating": 4.8,
+      "reviewCount": 520,
+      "deliveryTime": "35-50 min",
+      "deliveryFee": 6.0,
+      "favorite": false
+    }
+  ],
+  "products": [
+    {
+      "id": "p1",
+      "restaurantId": "1",
+      "name": "X-Bacon Artesanal",
+      "description": "Pão brioche tostado na manteiga, blend bovino 160g, fatias crocantes de bacon, queijo cheddar derretido e alface fresca.",
+      "image": "https://images.unsplash.com/photo-1553979459-d2229ba7433b?w=600&auto=format&fit=crop&q=80",
+      "price": 28.9,
+      "category": "Hambúrgueres"
+    },
+    {
+      "id": "p2",
+      "restaurantId": "1",
+      "name": "Duplo Cheddar Melt",
+      "description": "Dois smash burgers de 100g, generosa camada de cheddar cremoso e cebola caramelizada.",
+      "image": "https://images.unsplash.com/photo-1586190848861-99aa4a171e90?w=600&auto=format&fit=crop&q=80",
+      "price": 32.5,
+      "category": "Hambúrgueres"
+    },
+    {
+      "id": "p3",
+      "restaurantId": "1",
+      "name": "Batata Frita Rústica",
+      "description": "Batatas crocantes temperadas com alecrim, alho assado e páprica defumada.",
+      "image": "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=600&auto=format&fit=crop&q=80",
+      "price": 16.0,
+      "category": "Acompanhamentos"
+    },
+    {
+      "id": "p4",
+      "restaurantId": "1",
+      "name": "Refrigerante Lata 350ml",
+      "description": "Coca-Cola, Guaraná Antarctica ou Fanta Laranja gelada.",
+      "image": "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=600&auto=format&fit=crop&q=80",
+      "price": 6.5,
+      "category": "Bebidas"
+    },
+    {
+      "id": "p5",
+      "restaurantId": "2",
+      "name": "Pizza Calabresa Especial",
+      "description": "Massa artesanal de fermentação lenta, molho de tomate pelado, mussarela, calabresa defumada e cebola.",
+      "image": "https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?w=600&auto=format&fit=crop&q=80",
+      "price": 54.9,
+      "category": "Pizzas Salgadas"
+    },
+    {
+      "id": "p6",
+      "restaurantId": "2",
+      "name": "Pizza Quatro Queijos",
+      "description": "Mussarela, provolone, gorgonzola e parmesão gratinado com orégano fresco.",
+      "image": "https://images.unsplash.com/photo-1571407970349-bc81e7e96d47?w=600&auto=format&fit=crop&q=80",
+      "price": 59.9,
+      "category": "Pizzas Salgadas"
+    },
+    {
+      "id": "p22",
+      "restaurantId": "2",
+      "name": "Pizza Margherita",
+      "description": "Molho de tomate italiano, mussarela de búfala, manjericão fresco e um fio de azeite.",
+      "image": "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=600&auto=format&fit=crop&q=80",
+      "price": 49.9,
+      "category": "Pizzas Salgadas"
+    },
+    {
+      "id": "p23",
+      "restaurantId": "2",
+      "name": "Refrigerante 2 Litros",
+      "description": "Coca-Cola ou Guaraná Antarctica bem gelado para acompanhar a pizza.",
+      "image": "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=600&auto=format&fit=crop&q=80",
+      "price": 14.0,
+      "category": "Bebidas"
+    },
+    {
+      "id": "p7",
+      "restaurantId": "3",
+      "name": "Combinado Tradicional 20 peças",
+      "description": "Uramakis, hossomakis e niguiris variados de salmão, atum e kani.",
+      "image": "https://images.unsplash.com/photo-1553621042-f6e147245754?w=600&auto=format&fit=crop&q=80",
+      "price": 69.9,
+      "category": "Combinados"
+    },
+    {
+      "id": "p8",
+      "restaurantId": "3",
+      "name": "Combinado Salmão 16 peças",
+      "description": "Sashimi, niguiri e uramaki, todos feitos com salmão fresco.",
+      "image": "https://images.unsplash.com/photo-1562802378-063ec186a863?w=600&auto=format&fit=crop&q=80",
+      "price": 64.9,
+      "category": "Combinados"
+    },
+    {
+      "id": "p9",
+      "restaurantId": "3",
+      "name": "Hossomaki de Pepino 8 peças",
+      "description": "Enrolado fino de alga com arroz temperado e pepino japonês.",
+      "image": "https://images.unsplash.com/photo-1564489563601-c53cfc451e93?w=600&auto=format&fit=crop&q=80",
+      "price": 18.9,
+      "category": "Enrolados"
+    },
+    {
+      "id": "p10",
+      "restaurantId": "3",
+      "name": "Niguiri de Salmão 4 peças",
+      "description": "Bolinhos de arroz cobertos com fatias de salmão fresco.",
+      "image": "https://images.unsplash.com/photo-1583623025817-d180a2221d0a?w=600&auto=format&fit=crop&q=80",
+      "price": 22.9,
+      "category": "Niguiris"
+    },
+    {
+      "id": "p11",
+      "restaurantId": "3",
+      "name": "Lámen Tonkotsu",
+      "description": "Caldo de porco cozido por 12 horas, macarrão, chashu, ovo marinado e cebolinha.",
+      "image": "https://images.unsplash.com/photo-1617421753170-46511a8d73fc?w=600&auto=format&fit=crop&q=80",
+      "price": 42.9,
+      "category": "Pratos Quentes"
+    },
+    {
+      "id": "p12",
+      "restaurantId": "4",
+      "name": "Picanha na Chapa com Fritas",
+      "description": "Picanha grelhada no ponto, batata frita, farofa e vinagrete. Serve 1 pessoa.",
+      "image": "https://images.unsplash.com/photo-1600891964092-4316c288032e?w=600&auto=format&fit=crop&q=80",
+      "price": 58.9,
+      "category": "Pratos Executivos"
+    },
+    {
+      "id": "p13",
+      "restaurantId": "4",
+      "name": "Espetinhos Mistos 4 unidades",
+      "description": "Carne, frango, linguiça e coração grelhados na brasa, com farofa.",
+      "image": "https://images.unsplash.com/photo-1599487488170-d11ec9c172f0?w=600&auto=format&fit=crop&q=80",
+      "price": 34.9,
+      "category": "Churrasco"
+    },
+    {
+      "id": "p14",
+      "restaurantId": "4",
+      "name": "Costela Assada no Bafo",
+      "description": "Costela bovina assada lentamente por 8 horas, com mandioca cozida.",
+      "image": "https://images.unsplash.com/photo-1544025162-d76694265947?w=600&auto=format&fit=crop&q=80",
+      "price": 52.9,
+      "category": "Churrasco"
+    },
+    {
+      "id": "p15",
+      "restaurantId": "4",
+      "name": "Arroz Carreteiro",
+      "description": "Arroz refogado com carne-seca desfiada, linguiça, cebola e cheiro-verde.",
+      "image": "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=600&auto=format&fit=crop&q=80",
+      "price": 36.9,
+      "category": "Pratos Executivos"
+    },
+    {
+      "id": "p16",
+      "restaurantId": "4",
+      "name": "Pão de Queijo Mineiro 10 unidades",
+      "description": "Pão de queijo quentinho feito com queijo canastra.",
+      "image": "https://images.unsplash.com/photo-1606491956689-2ea866880c84?w=600&auto=format&fit=crop&q=80",
+      "price": 15.9,
+      "category": "Petiscos"
+    },
+    {
+      "id": "p17",
+      "restaurantId": "5",
+      "name": "Lasanha à Bolonhesa",
+      "description": "Camadas de massa fresca, molho bolonhesa, bechamel e parmesão gratinado.",
+      "image": "https://images.unsplash.com/photo-1574894709920-11b28e7367e3?w=600&auto=format&fit=crop&q=80",
+      "price": 46.9,
+      "category": "Massas"
+    },
+    {
+      "id": "p18",
+      "restaurantId": "5",
+      "name": "Penne ao Molho Branco",
+      "description": "Penne com molho de creme de leite, parmesão e ervas frescas.",
+      "image": "https://images.unsplash.com/photo-1555949258-eb67b1ef0ceb?w=600&auto=format&fit=crop&q=80",
+      "price": 38.9,
+      "category": "Massas"
+    },
+    {
+      "id": "p19",
+      "restaurantId": "5",
+      "name": "Espaguete alle Vongole",
+      "description": "Espaguete com vôngoles, alho, vinho branco, pimenta calabresa e salsinha.",
+      "image": "https://images.unsplash.com/photo-1595295333158-4742f28fbd85?w=600&auto=format&fit=crop&q=80",
+      "price": 54.9,
+      "category": "Massas"
+    },
+    {
+      "id": "p20",
+      "restaurantId": "5",
+      "name": "Penne all'Arrabbiata",
+      "description": "Penne com molho de tomate apimentado, alho e manjericão.",
+      "image": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?w=600&auto=format&fit=crop&q=80",
+      "price": 36.9,
+      "category": "Massas"
+    },
+    {
+      "id": "p21",
+      "restaurantId": "5",
+      "name": "Tiramisù",
+      "description": "Sobremesa clássica com biscoito champanhe, café, mascarpone e cacau.",
+      "image": "https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?w=600&auto=format&fit=crop&q=80",
+      "price": 22.9,
+      "category": "Sobremesas"
+    }
+  ],
+  "reviews": [
+    {
+      "id": "r1",
+      "restaurantId": "1",
+      "userName": "Paulo Leão",
+      "rating": 5.0,
+      "comment": "O hambúrguer estava mt bom!!!! Chegou super quente e antes do prazo estimado.",
+      "date": "15 de jun. de 2026"
+    },
+    {
+      "id": "r2",
+      "restaurantId": "1",
+      "userName": "Mariana Costa",
+      "rating": 4.8,
+      "comment": "Muito saboroso, embalagem impecável e ingredientes de altíssima qualidade. Recomendo!",
+      "date": "12 de jun. de 2026"
+    },
+    {
+      "id": "r3",
+      "restaurantId": "1",
+      "userName": "Lucas Fernandes",
+      "rating": 4.5,
+      "comment": "Batata crocante e hambúrguer no ponto certo. Só faltou um sachê extra de molho.",
+      "date": "08 de jun. de 2026"
+    },
+    {
+      "id": "r4",
+      "restaurantId": "2",
+      "userName": "Ana Beatriz",
+      "rating": 5.0,
+      "comment": "Massa fininha e muito recheio. A quatro queijos é a melhor da cidade.",
+      "date": "20 de jun. de 2026"
+    },
+    {
+      "id": "r5",
+      "restaurantId": "2",
+      "userName": "Rafael Oliveira",
+      "rating": 4.6,
+      "comment": "Pizza ótima, mas demorou um pouco mais que o previsto.",
+      "date": "17 de jun. de 2026"
+    },
+    {
+      "id": "r6",
+      "restaurantId": "3",
+      "userName": "Juliana Martins",
+      "rating": 4.9,
+      "comment": "Peixe fresquinho e arroz no ponto. O combinado de salmão vale muito a pena.",
+      "date": "22 de jun. de 2026"
+    },
+    {
+      "id": "r7",
+      "restaurantId": "3",
+      "userName": "Carlos Henrique",
+      "rating": 4.4,
+      "comment": "Lámen muito saboroso. Chegou bem embalado, sem derramar.",
+      "date": "18 de jun. de 2026"
+    },
+    {
+      "id": "r8",
+      "restaurantId": "4",
+      "userName": "Fernanda Souza",
+      "rating": 4.7,
+      "comment": "Picanha macia e farofa caseira. Parece comida de casa de vó.",
+      "date": "19 de jun. de 2026"
+    },
+    {
+      "id": "r9",
+      "restaurantId": "4",
+      "userName": "Thiago Ribeiro",
+      "rating": 4.3,
+      "comment": "Espetinhos bons, só achei a porção de farofa pequena.",
+      "date": "14 de jun. de 2026"
+    },
+    {
+      "id": "r10",
+      "restaurantId": "5",
+      "userName": "Camila Rocha",
+      "rating": 5.0,
+      "comment": "A lasanha é maravilhosa e o tiramisù fecha o pedido com chave de ouro.",
+      "date": "21 de jun. de 2026"
+    }
+  ]
+}

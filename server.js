@@ -46,130 +46,17 @@ if (DATABASE_URL) {
 // Servir arquivos estáticos se a pasta public existir
 app.use(express.static(path.join(__dirname, "public")));
 
-// Banco de dados em memória sincronizado com os mocks do app
-const categories = [
-  { id: "1", name: "Lanches", icon: "fast-food-outline" },
-  { id: "2", name: "Pizza", icon: "pizza-outline" },
-  { id: "3", name: "Sushi", icon: "fish-outline" },
-  { id: "4", name: "Brasileira", icon: "restaurant-outline" },
-  { id: "5", name: "Italiano", icon: "wine-outline" },
-];
+// Dados iniciais em memória. Vêm de database/seed.json, o mesmo arquivo que o app
+// usa quando o servidor está desligado. Assim app e servidor nunca ficam diferentes.
+const seed = require("./database/seed.json");
 
-let restaurants = [
-  {
-    id: "1",
-    name: "Burger House",
-    image:
-      "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600&auto=format&fit=crop&q=80",
-    category: "Lanches",
-    priceRange: "$$",
-    rating: 4.8,
-    reviewCount: 1245,
-    deliveryTime: "30-45 min",
-    deliveryFee: 5.99,
-    isOpen: true,
-    ownerEmail: "burgerhouse@foodrush.com.br",
-  },
-  {
-    id: "2",
-    name: "Pizza Bella",
-    image:
-      "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&auto=format&fit=crop&q=80",
-    category: "Pizza",
-    priceRange: "$$$",
-    rating: 4.9,
-    reviewCount: 890,
-    deliveryTime: "40-55 min",
-    deliveryFee: 7.5,
-    isOpen: true,
-  },
-  {
-    id: "3",
-    name: "Sushi Master",
-    image:
-      "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=600&auto=format&fit=crop&q=80",
-    category: "Sushi",
-    priceRange: "$$$$",
-    rating: 4.7,
-    reviewCount: 654,
-    deliveryTime: "45-60 min",
-    deliveryFee: 9.99,
-    isOpen: true,
-  },
-  {
-    id: "4",
-    name: "Sabor da Terra",
-    image:
-      "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=600&auto=format&fit=crop&q=80",
-    category: "Brasileira",
-    priceRange: "$$",
-    rating: 4.6,
-    reviewCount: 432,
-    deliveryTime: "25-40 min",
-    deliveryFee: 4.5,
-    isOpen: true,
-  },
-  {
-    id: "5",
-    name: "Cantina d'Italia",
-    image:
-      "https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=600&auto=format&fit=crop&q=80",
-    category: "Italiano",
-    priceRange: "$$$",
-    rating: 4.8,
-    reviewCount: 520,
-    deliveryTime: "35-50 min",
-    deliveryFee: 6.0,
-    isOpen: true,
-  },
-];
+const categories = seed.categories;
 
-let products = [
-  {
-    id: "p1",
-    restaurantId: "1",
-    name: "X-Bacon Artesanal",
-    description:
-      "Blend bovino 160g, fatias crocantes de bacon, queijo cheddar derretido e alface fresca.",
-    price: 28.9,
-    category: "Hambúrgueres",
-    image:
-      "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "p2",
-    restaurantId: "1",
-    name: "Batata Frita Rústica",
-    description:
-      "Batatas crocantes temperadas com alecrim, alho assado e páprica defumada.",
-    price: 16.0,
-    category: "Acompanhamentos",
-    image:
-      "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=500&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "p3",
-    restaurantId: "1",
-    name: "Smash Duplo Cheddar",
-    description:
-      "Dois hambúrgueres smash de 80g, dobro de cheddar cremoso e cebola caramelizada.",
-    price: 32.5,
-    category: "Hambúrgueres",
-    image:
-      "https://images.unsplash.com/photo-1586190848861-99aa4a171e90?w=500&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "p4",
-    restaurantId: "2",
-    name: "Pizza Margherita Especial",
-    description:
-      "Molho de tomate pelado italiano, mussarela de búfala, manjericão fresco e azeite.",
-    price: 49.9,
-    category: "Pizzas Tradicionais",
-    image:
-      "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500&auto=format&fit=crop&q=80",
-  },
-];
+let restaurants = seed.restaurants.map((r) => ({ ...r, isOpen: true }));
+
+let products = [...seed.products];
+
+let reviews = [...seed.reviews];
 
 let inMemoryOrders = [
   {
@@ -209,6 +96,8 @@ app.get("/", (req, res) => {
       "/api/products",
       "/api/categories",
       "/api/orders",
+      "/api/restaurants/:id/reviews",
+      "/api/restaurants/:id/status",
       "/api/partners/register",
     ],
   });
@@ -272,12 +161,12 @@ app.post("/api/partners/register", (req, res) => {
   };
 
   const newRestaurant = {
-    id: `rest-${Date.now()}`,
+    id: req.body.id || `rest-${Date.now()}`, // o app manda o id que já usa
     name: storeName,
     category,
     image: image || defaultImages[category] || defaultImages.Lanches,
     priceRange: "$$",
-    rating: 5.0,
+    rating: 0, // loja nova começa sem nota
     reviewCount: 0,
     deliveryTime: deliveryTime || "30-45 min",
     deliveryFee: Number(deliveryFee) || 0,
@@ -288,6 +177,8 @@ app.post("/api/partners/register", (req, res) => {
     createdAt: new Date().toISOString(),
   };
 
+  // Se a loja já existir (mesmo id), substitui em vez de duplicar
+  restaurants = restaurants.filter((r) => r.id !== newRestaurant.id);
   restaurants.unshift(newRestaurant);
   console.log(`[FOOD RUSH API] Nova loja cadastrada: ${newRestaurant.name} (${newRestaurant.category}) por ${ownerName || ownerEmail}`);
 
@@ -303,12 +194,15 @@ app.post("/api/restaurants/:id/products", (req, res) => {
   }
 
   const { name, description, price, category, image } = req.body;
-  if (!name || !price) {
-    return res.status(400).json({ error: "Nome e preço são obrigatórios para o produto." });
+  if (!name || !String(name).trim()) {
+    return res.status(400).json({ error: "O nome do produto é obrigatório." });
+  }
+  if (!(Number(price) > 0)) {
+    return res.status(400).json({ error: "O preço deve ser um número maior que zero." });
   }
 
   const newProduct = {
-    id: `prod-${Date.now()}`,
+    id: req.body.id || `prod-${Date.now()}`, // o app manda o id que já usa
     restaurantId,
     name,
     description: description || "",
@@ -325,11 +219,130 @@ app.post("/api/restaurants/:id/products", (req, res) => {
   res.status(201).json(newProduct);
 });
 
+// Empreendedor editando os dados da loja
+app.put("/api/restaurants/:id", (req, res) => {
+  const restaurant = restaurants.find((r) => r.id === req.params.id);
+  if (!restaurant) {
+    return res.status(404).json({ error: "Restaurante não encontrado" });
+  }
+  const { name, category, deliveryTime, deliveryFee, image } = req.body;
+  if (name !== undefined && !String(name).trim()) {
+    return res.status(400).json({ error: "O nome da loja não pode ficar vazio." });
+  }
+  if (deliveryFee !== undefined && !(Number(deliveryFee) >= 0)) {
+    return res.status(400).json({ error: "A taxa de entrega deve ser zero ou mais." });
+  }
+  Object.assign(restaurant, {
+    ...(name !== undefined && { name }),
+    ...(category !== undefined && { category }),
+    ...(deliveryTime !== undefined && { deliveryTime }),
+    ...(deliveryFee !== undefined && { deliveryFee: Number(deliveryFee) }),
+    ...(image !== undefined && { image }),
+  });
+  res.json(restaurant);
+});
+
+// Empreendedor excluindo a loja (e os pratos dela)
+app.delete("/api/restaurants/:id", (req, res) => {
+  const exists = restaurants.some((r) => r.id === req.params.id);
+  if (!exists) {
+    return res.status(404).json({ error: "Restaurante não encontrado" });
+  }
+  restaurants = restaurants.filter((r) => r.id !== req.params.id);
+  products = products.filter((p) => p.restaurantId !== req.params.id);
+  res.status(204).end();
+});
+
+// Empreendedor editando um prato
+app.put("/api/products/:id", (req, res) => {
+  const product = products.find((p) => p.id === req.params.id);
+  if (!product) {
+    return res.status(404).json({ error: "Produto não encontrado" });
+  }
+  const { name, description, price, category, image } = req.body;
+  if (name !== undefined && !String(name).trim()) {
+    return res.status(400).json({ error: "O nome do produto é obrigatório." });
+  }
+  if (price !== undefined && !(Number(price) > 0)) {
+    return res.status(400).json({ error: "O preço deve ser um número maior que zero." });
+  }
+  Object.assign(product, {
+    ...(name !== undefined && { name }),
+    ...(description !== undefined && { description }),
+    ...(price !== undefined && { price: Number(price) }),
+    ...(category !== undefined && { category }),
+    ...(image !== undefined && { image }),
+  });
+  res.json(product);
+});
+
+// Empreendedor removendo um prato do cardápio
+app.delete("/api/products/:id", (req, res) => {
+  const exists = products.some((p) => p.id === req.params.id);
+  if (!exists) {
+    return res.status(404).json({ error: "Produto não encontrado" });
+  }
+  products = products.filter((p) => p.id !== req.params.id);
+  res.status(204).end();
+});
+
+// Empreendedor abrindo ou fechando a loja
+app.patch("/api/restaurants/:id/status", (req, res) => {
+  const restaurant = restaurants.find((r) => r.id === req.params.id);
+  if (!restaurant) {
+    return res.status(404).json({ error: "Restaurante não encontrado" });
+  }
+  restaurant.isOpen = Boolean(req.body.isOpen);
+  res.json(restaurant);
+});
+
+// Avaliações de uma loja (as mais recentes primeiro)
+app.get("/api/restaurants/:id/reviews", (req, res) => {
+  const list = reviews.filter((r) => r.restaurantId === req.params.id);
+  res.json(list);
+});
+
+// Cliente enviando uma avaliação: salva e recalcula a nota média da loja
+app.post("/api/restaurants/:id/reviews", (req, res) => {
+  const restaurant = restaurants.find((r) => r.id === req.params.id);
+  if (!restaurant) {
+    return res.status(404).json({ error: "Restaurante não encontrado" });
+  }
+
+  const { id, userName, rating, comment, date, orderId } = req.body;
+  const nota = Number(rating);
+  if (!nota || nota < 1 || nota > 5) {
+    return res.status(400).json({ error: "A nota deve ser um número de 1 a 5." });
+  }
+
+  const newReview = {
+    id: id || `rev-${Date.now()}`,
+    restaurantId: restaurant.id,
+    orderId,
+    userName: userName || "Cliente",
+    rating: nota,
+    comment: comment || "",
+    date: date || new Date().toLocaleDateString("pt-BR"),
+  };
+  reviews.unshift(newReview);
+
+  // Nova média = (média antiga × quantidade antiga + nova nota) ÷ (quantidade + 1)
+  const total = restaurant.rating * restaurant.reviewCount + nota;
+  restaurant.reviewCount += 1;
+  restaurant.rating = Math.round((total / restaurant.reviewCount) * 10) / 10;
+
+  res.status(201).json(newReview);
+});
+
 app.get("/api/orders", (req, res) => {
   res.json(inMemoryOrders);
 });
 
 app.post("/api/orders", (req, res) => {
+  const restaurant = restaurants.find((r) => r.id === req.body.restaurantId);
+  if (restaurant && restaurant.isOpen === false) {
+    return res.status(409).json({ error: "A loja está fechada e não aceita pedidos agora." });
+  }
   const newOrder = {
     id: `ord-${Date.now()}`,
     createdAt: new Date().toISOString(),

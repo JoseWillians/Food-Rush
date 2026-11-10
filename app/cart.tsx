@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { router } from "expo-router";
@@ -18,11 +19,16 @@ import { Header } from "@/src/components/ui/Header";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { formatCurrency } from "@/src/utils/currency";
 
+/**
+ * Carrinho (sacola): itens, quantidade, observação de cada item e resumo de valores.
+ * A taxa de entrega é a da loja dos itens (CartContext).
+ */
 export default function CartScreen() {
   const {
     items,
     increaseQuantity,
     decreaseQuantity,
+    updateNote,
     removeItem,
     clearCart,
     subtotal,
@@ -118,6 +124,17 @@ export default function CartScreen() {
                       <Ionicons name="add" size={16} color={colors.text} />
                     </Pressable>
                   </View>
+
+                  {/* Observação do item, enviada para a loja junto com o pedido */}
+                  <TextInput
+                    style={styles.noteInput}
+                    placeholder="Observação (ex.: sem cebola)"
+                    placeholderTextColor={colors.gray400}
+                    value={item.note ?? ""}
+                    onChangeText={(text) => updateNote(item.product.id, text)}
+                    maxLength={120}
+                    accessibilityLabel={`Observação para ${item.product.name}`}
+                  />
                 </View>
               </View>
             ))}
@@ -235,6 +252,17 @@ const styles = StyleSheet.create({
     fontFamily: typography.bold,
     color: colors.text,
     paddingHorizontal: spacing.sm,
+  },
+  noteInput: {
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    fontSize: fontSizes.sm,
+    fontFamily: typography.regular,
+    color: colors.text,
   },
   summaryCard: {
     backgroundColor: colors.gray50,

@@ -34,6 +34,8 @@ yarn-error.*
 .env
 .env.*
 .env*.local
+# o arquivo de exemplo deve ir para o repositório (o README manda copiá-lo)
+!.env.example
 
 # typescript
 *.tsbuildinfo

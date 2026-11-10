@@ -16,6 +16,7 @@ import { borderRadius, spacing } from "@/src/theme/spacing";
 import { fontSizes, typography } from "@/src/theme/typography";
 import { BackButton } from "@/src/components/ui/BackButton";
 import { useOrders } from "@/src/contexts/OrderContext";
+import { STORAGE_KEYS, storageGet, storageSet } from "@/src/utils/storage";
 
 type ChatMessage = {
   id: string;
@@ -32,6 +33,10 @@ const QUICK_REPLIES = [
   "Obrigado!",
 ];
 
+/**
+ * Chat do pedido com respostas automáticas (simulado).
+ * As mensagens ficam salvas por pedido no aparelho.
+ */
 export default function OrderChatScreen() {
   const { activeOrder } = useOrders();
   const scrollRef = useRef<ScrollView>(null);
@@ -39,14 +44,39 @@ export default function OrderChatScreen() {
   const restaurantName = activeOrder?.restaurantName || "Burger House";
   const courierName = activeOrder?.courierName || "Policarpo de Sousa";
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "1",
-      sender: "store",
-      text: `Olá! Seu pedido já foi despachado com nosso entregador ${courierName} e está a caminho.`,
-      time: "Agora há pouco",
-    },
-  ]);
+  const welcomeMessage: ChatMessage = {
+    id: "1",
+    sender: "store",
+    text: `Olá! Seu pedido já foi despachado com nosso entregador ${courierName} e está a caminho.`,
+    time: "Agora há pouco",
+  };
+  const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage]);
+  // Evita salvar por cima antes de terminar de carregar a conversa salva
+  const [loaded, setLoaded] = useState(false);
+
+  // Cada pedido tem sua própria conversa salva no aparelho
+  const orderId = activeOrder?.id;
+  const chatKey = `${STORAGE_KEYS.CHAT}_${orderId}`;
+
+  useEffect(() => {
+    // Ainda carregando o pedido: não lê nem salva nada
+    if (!orderId) return;
+    let ativo = true;
+    setLoaded(false);
+    storageGet<ChatMessage[] | null>(chatKey, null).then((saved) => {
+      if (!ativo) return;
+      if (saved && saved.length > 0) setMessages(saved);
+      setLoaded(true);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [chatKey, orderId]);
+
+  // Salva a conversa sempre que chega uma mensagem nova
+  useEffect(() => {
+    if (loaded && orderId) storageSet(chatKey, messages);
+  }, [messages, loaded, chatKey, orderId]);
   const [inputText, setInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
 

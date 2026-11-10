@@ -14,16 +14,20 @@ import { colors } from "@/src/theme/colors";
 import { borderRadius, spacing } from "@/src/theme/spacing";
 import { fontSizes, typography } from "@/src/theme/typography";
 import { useFavorites } from "@/src/contexts/FavoritesContext";
-import { mockProducts } from "@/src/mocks/products";
 import { RatingStars } from "@/src/components/ui/RatingStars";
 import { formatCurrency } from "@/src/utils/currency";
 import { AppButton } from "@/src/components/ui/AppButton";
+import { EmptyState } from "@/src/components/ui/EmptyState";
 
 type FavoritesTab = "restaurants" | "dishes";
 
+/**
+ * Aba Favoritos: restaurantes e pratos marcados com o coração.
+ * Os dados vêm do FavoritesContext e ficam salvos por usuário.
+ */
 export default function FavoritesScreen() {
   const [activeTab, setActiveTab] = useState<FavoritesTab>("restaurants");
-  const { favorites, toggleFavorite } = useFavorites();
+  const { favorites, toggleFavorite, favoriteProducts, toggleFavoriteProduct } = useFavorites();
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -62,26 +66,22 @@ export default function FavoritesScreen() {
       >
         {activeTab === "restaurants" ? (
           favorites.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="heart-outline" size={56} color={colors.gray300} />
-              <Text style={styles.emptyTitle}>Você ainda não possui favoritos</Text>
-              <Text style={styles.emptySubtitle}>
-                Toque no coração dos restaurantes para salvá-los aqui.
-              </Text>
-              <AppButton
-                title="Descobrir Restaurantes"
-                onPress={() => router.push("/(tabs)")}
-                variant="outline"
-                size="sm"
-                style={{ marginTop: spacing.md, minWidth: 160 }}
-              />
-            </View>
+            <EmptyState
+              icon="restaurant-outline"
+              accentIcon="heart"
+              title="Você ainda não tem favoritos"
+              message="Toque no coração de um restaurante para guardá-lo aqui e achar mais rápido depois."
+              actionLabel="Descobrir restaurantes"
+              onAction={() => router.push("/(tabs)")}
+            />
           ) : (
             favorites.map((restaurant) => (
               <Pressable
                 key={restaurant.id}
                 style={styles.card}
-                onPress={() => router.push(`/restaurant/${restaurant.id}` as any)}
+                onPress={() =>
+                  router.push({ pathname: "/restaurant/[id]", params: { id: restaurant.id } })
+                }
               >
                 <Image source={{ uri: restaurant.image }} style={styles.cardImage} />
                 <Pressable
@@ -103,10 +103,16 @@ export default function FavoritesScreen() {
 
                   <View style={styles.cardFooter}>
                     <View style={styles.ratingRow}>
-                      <RatingStars rating={restaurant.rating} size={14} />
-                      <Text style={styles.ratingText}>
-                        {restaurant.rating.toFixed(1)} ({restaurant.reviewCount})
-                      </Text>
+                      {restaurant.reviewCount === 0 ? (
+                        <Text style={styles.ratingText}>Novo</Text>
+                      ) : (
+                        <>
+                          <RatingStars rating={restaurant.rating} size={14} />
+                          <Text style={styles.ratingText}>
+                            {restaurant.rating.toFixed(1)} ({restaurant.reviewCount})
+                          </Text>
+                        </>
+                      )}
                     </View>
                     <Text style={styles.timeText}>{restaurant.deliveryTime}</Text>
                   </View>
@@ -115,20 +121,47 @@ export default function FavoritesScreen() {
             ))
           )
         ) : (
-          /* Pratos Favoritos */
-          mockProducts.map((product) => (
-            <View key={product.id} style={styles.dishCard}>
-              <Image source={{ uri: product.image }} style={styles.dishImage} />
-              <View style={styles.dishInfo}>
-                <Text style={styles.dishName}>{product.name}</Text>
-                <Text style={styles.dishCategory}>{product.category}</Text>
-                <Text style={styles.dishPrice}>{formatCurrency(product.price)}</Text>
+          /* Pratos Favoritos: só os que o usuário marcou com o coração */
+          favoriteProducts.length === 0 ? (
+            <EmptyState
+              icon="fast-food-outline"
+              accentIcon="heart"
+              title="Nenhum prato favorito"
+              message="Toque no coração de um prato dentro da loja para guardá-lo aqui."
+              actionLabel="Descobrir pratos"
+              onAction={() => router.push("/(tabs)")}
+            />
+          ) : (
+            favoriteProducts.map((product) => (
+              // O cartão e o coração são botões separados (um botão dentro do outro dá erro na web)
+              <View key={product.id} style={styles.dishCard}>
+                <Pressable
+                  style={styles.dishMain}
+                  onPress={() =>
+                    router.push({ pathname: "/restaurant/[id]", params: { id: product.restaurantId } })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={`Abrir a loja de ${product.name}`}
+                >
+                  <Image source={{ uri: product.image }} style={styles.dishImage} />
+                  <View style={styles.dishInfo}>
+                    <Text style={styles.dishName}>{product.name}</Text>
+                    <Text style={styles.dishCategory}>{product.category}</Text>
+                    <Text style={styles.dishPrice}>{formatCurrency(product.price)}</Text>
+                  </View>
+                </Pressable>
+                <Pressable
+                  style={styles.dishFavIcon}
+                  onPress={() => toggleFavoriteProduct(product)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remover ${product.name} dos favoritos`}
+                >
+                  <Ionicons name="heart" size={22} color={colors.primary} />
+                </Pressable>
               </View>
-              <Pressable style={styles.dishFavIcon}>
-                <Ionicons name="heart" size={22} color={colors.primary} />
-              </Pressable>
-            </View>
-          ))
+            ))
+          )
         )}
       </ScrollView>
     </SafeAreaView>
@@ -255,6 +288,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
+  },
+  dishMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
   },
   dishImage: {
     width: 70,

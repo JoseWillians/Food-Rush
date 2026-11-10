@@ -1,7 +1,6 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   Pressable,
@@ -27,29 +26,101 @@ import { RatingStars } from "@/src/components/ui/RatingStars";
 import { formatCurrency } from "@/src/utils/currency";
 import { api } from "@/src/services/api";
 import { Restaurant } from "@/src/types";
+import { STORAGE_KEYS, storageGet, storageSet } from "@/src/utils/storage";
+import { showMessage } from "@/src/utils/dialog";
 
+type IconName = keyof typeof Ionicons.glyphMap;
+
+// As categorias vêm do JSON como texto. Esta função confere se o texto
+// é um ícone que existe de verdade; se não for, usa um ícone padrão.
+const toIconName = (name: string): IconName =>
+  name in Ionicons.glyphMap ? (name as IconName) : "restaurant-outline";
+
+// Filtros rápidos da tela inicial
+const FILTER_CHIPS: { id: FilterType; label: string; icon: IconName }[] = [
+  { id: "all", label: "Todos", icon: "apps-outline" },
+  { id: "fast", label: "Mais rápidos", icon: "flash-outline" },
+  { id: "rating", label: "Top Avaliados (★ 4.8+)", icon: "star-outline" },
+  { id: "free_delivery", label: "Menor Taxa", icon: "bicycle-outline" },
+];
+
+type FilterType = "all" | "fast" | "rating" | "free_delivery";
+type SortType = "relevance" | "rating" | "time" | "price";
+
+// Filtros que ficam salvos no aparelho entre uma abertura e outra
+type SavedFilters = {
+  category: string | null;
+  filter: FilterType;
+  sort: SortType;
+};
+
+const SORT_OPTIONS: { id: SortType; label: string }[] = [
+  { id: "relevance", label: "Relevância" },
+  { id: "rating", label: "Melhor nota" },
+  { id: "time", label: "Mais rápido" },
+  { id: "price", label: "Mais barato" },
+];
+
+// "30-45 min" -> 30 (usa o menor tempo para comparar)
+const minDeliveryTime = (r: Restaurant) => parseInt(r.deliveryTime, 10) || 999;
+
+/**
+ * Tela inicial (Home): busca, categorias, filtros, ordenação e lista de restaurantes.
+ * Os restaurantes vêm da API (ou dos dados locais, se o servidor estiver desligado)
+ * e os filtros escolhidos ficam salvos no aparelho.
+ */
 export default function HomeScreen() {
   const { user, updateUser } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites();
   const { items, total, itemCount } = useCart();
 
-  type FilterType = "all" | "fast" | "rating" | "free_delivery";
   const [restaurants, setRestaurants] = useState<Restaurant[]>(mockRestaurants);
+  const [loading, setLoading] = useState(true);
+  const [serverOffline, setServerOffline] = useState(false);
+  const [sortBy, setSortBy] = useState<SortType>("relevance");
+  const [filtersLoaded, setFiltersLoaded] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [requestingLocation, setRequestingLocation] = useState(false);
 
   const loadRestaurants = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await api.getRestaurants();
       if (data && data.length > 0) {
         setRestaurants(data);
       }
     } catch {
-      // Fallback
+      // Mantém a lista que já está na tela
+    } finally {
+      // Se o servidor não respondeu, a lista veio dos dados salvos no aparelho
+      setServerOffline(api.isServerOnline() === false);
+      setLoading(false);
     }
   }, []);
+
+  // Recupera os filtros usados da última vez
+  useEffect(() => {
+    storageGet<SavedFilters | null>(STORAGE_KEYS.HOME_FILTERS, null).then((saved) => {
+      if (saved) {
+        setSelectedCategory(saved.category);
+        setActiveFilter(saved.filter);
+        setSortBy(saved.sort);
+      }
+      setFiltersLoaded(true);
+    });
+  }, []);
+
+  // Salva os filtros sempre que mudam
+  useEffect(() => {
+    if (!filtersLoaded) return;
+    storageSet<SavedFilters>(STORAGE_KEYS.HOME_FILTERS, {
+      category: selectedCategory,
+      filter: activeFilter,
+      sort: sortBy,
+    });
+  }, [selectedCategory, activeFilter, sortBy, filtersLoaded]);
 
   useFocusEffect(
     useCallback(() => {
@@ -62,10 +133,9 @@ export default function HomeScreen() {
       setRequestingLocation(true);
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert(
+        showMessage(
           "Permissão de Localização",
-          "Para encontrarmos os restaurantes mais próximos com entrega rápida para você, precisamos do acesso à sua localização.",
-          [{ text: "Entendido" }]
+          "Para encontrarmos os restaurantes mais próximos com entrega rápida para você, precisamos do acesso à sua localização."
         );
         return;
       }
@@ -87,10 +157,10 @@ export default function HomeScreen() {
         const formatted = `${street}${num} - ${district ? `${district}, ` : ""}${city}`;
 
         await updateUser({ address: formatted });
-        Alert.alert("Localização Atualizada", `Endereço detectado:\n${formatted}`);
+        showMessage("Localização Atualizada", `Endereço detectado:\n${formatted}`);
       }
     } catch {
-      Alert.alert(
+      showMessage(
         "Aviso",
         "Não foi possível obter a localização exata no momento. Você pode editar seu endereço nas configurações de perfil."
       );
@@ -121,6 +191,17 @@ export default function HomeScreen() {
     return matchesSearch && matchesCategory && matchesFilter;
   });
 
+  // Ordenação escolhida pelo usuário ("relevância" mantém a ordem original)
+  const sortedRestaurants = [...filteredRestaurants].sort((a, b) => {
+    if (sortBy === "rating") return b.rating - a.rating;
+    if (sortBy === "time") return minDeliveryTime(a) - minDeliveryTime(b);
+    if (sortBy === "price") {
+      // Faixa de preço ($, $$, $$$) e, no empate, a menor taxa de entrega
+      return a.priceRange.length - b.priceRange.length || a.deliveryFee - b.deliveryFee;
+    }
+    return 0;
+  });
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
@@ -137,7 +218,9 @@ export default function HomeScreen() {
             style={styles.notificationButton}
             accessibilityRole="button"
             accessibilityLabel="Notificações"
-            onPress={() => alert("Você não possui novas notificações no momento.")}
+            onPress={() =>
+              showMessage("Notificações", "Você não possui novas notificações no momento.")
+            }
           >
             <Ionicons name="notifications-outline" size={24} color={colors.text} />
             <View style={styles.notificationBadge} />
@@ -217,7 +300,7 @@ export default function HomeScreen() {
                     ]}
                   >
                     <Ionicons
-                      name={item.icon as any}
+                      name={toIconName(item.icon)}
                       size={26}
                       color={isSelected ? colors.white : colors.primary}
                     />
@@ -243,20 +326,7 @@ export default function HomeScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterChipsScroll}
           >
-            {[
-              { id: "all", label: "Todos", icon: "apps-outline" },
-              { id: "fast", label: "Mais rápidos", icon: "flash-outline" },
-              {
-                id: "rating",
-                label: "Top Avaliados (★ 4.8+)",
-                icon: "star-outline",
-              },
-              {
-                id: "free_delivery",
-                label: "Menor Taxa",
-                icon: "bicycle-outline",
-              },
-            ].map((chip) => {
+            {FILTER_CHIPS.map((chip) => {
               const isSelected = activeFilter === chip.id;
               return (
                 <Pressable
@@ -265,12 +335,12 @@ export default function HomeScreen() {
                     styles.filterChip,
                     isSelected && styles.filterChipActive,
                   ]}
-                  onPress={() => setActiveFilter(chip.id as any)}
+                  onPress={() => setActiveFilter(chip.id)}
                   accessibilityRole="button"
                   accessibilityLabel={`Filtrar por ${chip.label}`}
                 >
                   <Ionicons
-                    name={chip.icon as any}
+                    name={chip.icon}
                     size={14}
                     color={isSelected ? colors.white : colors.textSecondary}
                   />
@@ -288,16 +358,66 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
 
+        {/* Ordenação */}
+        <View style={styles.sortRow}>
+          <Text style={styles.sortLabel}>Ordenar:</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterChipsScrollTight}
+          >
+            {SORT_OPTIONS.map((opt) => {
+              const selected = sortBy === opt.id;
+              return (
+                <Pressable
+                  key={opt.id}
+                  style={[styles.sortChip, selected && styles.sortChipActive]}
+                  onPress={() => setSortBy(opt.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`Ordenar por ${opt.label}`}
+                >
+                  <Text style={[styles.sortChipText, selected && styles.sortChipTextActive]}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Aviso quando o servidor não respondeu */}
+        {serverOffline && (
+          <View style={styles.offlineBanner}>
+            <Ionicons name="cloud-offline-outline" size={18} color={colors.warning} />
+            <Text style={styles.offlineText}>
+              Servidor indisponível. Mostrando os dados salvos no aparelho.
+            </Text>
+            <Pressable onPress={loadRestaurants} hitSlop={8} accessibilityRole="button">
+              <Text style={styles.retryText}>Tentar de novo</Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* Seção Restaurantes em Destaque */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Restaurantes em destaque</Text>
-          <Pressable onPress={() => { setSelectedCategory(null); setActiveFilter("all"); }}>
-            <Text style={styles.viewAllText}>Ver todos</Text>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>Restaurantes em destaque</Text>
+            {loading && <ActivityIndicator size="small" color={colors.primary} />}
+          </View>
+          <Pressable
+            onPress={() => {
+              setSelectedCategory(null);
+              setActiveFilter("all");
+              setSortBy("relevance");
+            }}
+          >
+            <Text style={styles.viewAllText}>Limpar</Text>
           </Pressable>
         </View>
 
         {/* Lista de Restaurantes */}
-        {filteredRestaurants.length === 0 ? (
+        {sortedRestaurants.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="restaurant-outline" size={48} color={colors.gray300} />
             <Text style={styles.emptyTitle}>Nenhum restaurante encontrado</Text>
@@ -306,27 +426,72 @@ export default function HomeScreen() {
             </Text>
           </View>
         ) : (
-          filteredRestaurants.map((restaurant) => {
+          sortedRestaurants.map((restaurant) => {
             const favoriteActive = isFavorite(restaurant.id);
             return (
-              <Pressable
-                key={restaurant.id}
-                style={styles.restaurantCard}
-                onPress={() => router.push(`/restaurant/${restaurant.id}` as any)}
-              >
-                <Image
-                  source={{ uri: restaurant.image }}
-                  style={styles.restaurantImage}
-                  resizeMode="cover"
-                />
+              // O cartão e o coração são botões separados (um botão dentro do outro dá erro na web)
+              <View key={restaurant.id} style={styles.restaurantCard}>
+                <Pressable
+                  onPress={() =>
+                    router.push({ pathname: "/restaurant/[id]", params: { id: restaurant.id } })
+                  }
+                >
+                  <Image
+                    source={{ uri: restaurant.image }}
+                    style={styles.restaurantImage}
+                    resizeMode="cover"
+                  />
 
+                  <View style={styles.restaurantInfo}>
+                    <View style={styles.restaurantHeaderRow}>
+                      <Text style={styles.restaurantName}>
+                        {restaurant.name}
+                        {restaurant.isOpen === false && (
+                          <Text style={styles.closedTag}>  · Fechada</Text>
+                        )}
+                      </Text>
+                      <Text style={styles.priceRange}>{restaurant.priceRange}</Text>
+                    </View>
+
+                    <Text style={styles.restaurantCategory}>
+                      {restaurant.category}
+                    </Text>
+
+                    <View style={styles.restaurantFooterRow}>
+                      <View style={styles.ratingBox}>
+                        {/* Loja sem avaliações ainda: mostra "Novo" em vez de nota */}
+                        {restaurant.reviewCount === 0 ? (
+                          <Text style={styles.ratingNumber}>Novo</Text>
+                        ) : (
+                          <>
+                            <RatingStars rating={restaurant.rating} size={14} />
+                            <Text style={styles.ratingNumber}>
+                              {restaurant.rating.toFixed(1)}
+                            </Text>
+                            <Text style={styles.reviewCount}>
+                              ({restaurant.reviewCount})
+                            </Text>
+                          </>
+                        )}
+                      </View>
+
+                      <View style={styles.timeBox}>
+                        <Ionicons
+                          name="time-outline"
+                          size={14}
+                          color={colors.textSecondary}
+                        />
+                        <Text style={styles.timeText}>{restaurant.deliveryTime}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </Pressable>
                 <Pressable
                   style={styles.favoriteBadge}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    toggleFavorite(restaurant);
-                  }}
+                  onPress={() => toggleFavorite(restaurant)}
                   hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={favoriteActive ? "Remover dos favoritos" : "Favoritar restaurante"}
                 >
                   <Ionicons
                     name={favoriteActive ? "heart" : "heart-outline"}
@@ -334,39 +499,7 @@ export default function HomeScreen() {
                     color={favoriteActive ? colors.primary : colors.gray500}
                   />
                 </Pressable>
-
-                <View style={styles.restaurantInfo}>
-                  <View style={styles.restaurantHeaderRow}>
-                    <Text style={styles.restaurantName}>{restaurant.name}</Text>
-                    <Text style={styles.priceRange}>{restaurant.priceRange}</Text>
-                  </View>
-
-                  <Text style={styles.restaurantCategory}>
-                    {restaurant.category}
-                  </Text>
-
-                  <View style={styles.restaurantFooterRow}>
-                    <View style={styles.ratingBox}>
-                      <RatingStars rating={restaurant.rating} size={14} />
-                      <Text style={styles.ratingNumber}>
-                        {restaurant.rating.toFixed(1)}
-                      </Text>
-                      <Text style={styles.reviewCount}>
-                        ({restaurant.reviewCount})
-                      </Text>
-                    </View>
-
-                    <View style={styles.timeBox}>
-                      <Ionicons
-                        name="time-outline"
-                        size={14}
-                        color={colors.textSecondary}
-                      />
-                      <Text style={styles.timeText}>{restaurant.deliveryTime}</Text>
-                    </View>
-                  </View>
-                </View>
-              </Pressable>
+              </View>
             );
           })
         )}
@@ -539,6 +672,68 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.md,
   },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: spacing.lg,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  sortLabel: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.semiBold,
+    color: colors.textSecondary,
+    marginRight: spacing.xs,
+  },
+  filterChipsScrollTight: {
+    gap: spacing.xs,
+    paddingRight: spacing.lg,
+  },
+  sortChip: {
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.full,
+  },
+  sortChipActive: {
+    backgroundColor: colors.primaryLight,
+  },
+  sortChipText: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.medium,
+    color: colors.textSecondary,
+  },
+  sortChipTextActive: {
+    color: colors.primary,
+    fontFamily: typography.bold,
+  },
+  offlineBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.gray50,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  offlineText: {
+    flex: 1,
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+  },
+  retryText: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.bold,
+    color: colors.primary,
+  },
   sectionTitle: {
     fontSize: fontSizes.lg,
     fontFamily: typography.bold,
@@ -548,6 +743,11 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.sm,
     fontFamily: typography.semiBold,
     color: colors.primary,
+  },
+  closedTag: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.semiBold,
+    color: colors.error,
   },
   restaurantCard: {
     marginHorizontal: spacing.lg,
