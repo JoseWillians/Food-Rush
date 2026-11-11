@@ -63,7 +63,6 @@ export function AppInput({
             Platform.OS === "web" &&
               ({
                 outlineStyle: "none",
-                outline: "none",
                 outlineWidth: 0,
                 outlineColor: "transparent",
               } as any),
@@ -147,7 +146,6 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "web"
       ? ({
           outlineStyle: "none",
-          outline: "none",
           outlineWidth: 0,
           outlineColor: "transparent",
         } as any)
