@@ -60,13 +60,20 @@ export default function CourierDashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       loadData();
+      const intervalId = setInterval(() => {
+        loadData();
+      }, 3000);
+      return () => clearInterval(intervalId);
     }, [loadData])
   );
 
   if (!isCourier) {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="Painel do Entregador" />
+        <Header
+          title="Painel do Entregador"
+          onBackPress={() => router.replace("/(tabs)/profile")}
+        />
         <EmptyState
           icon="bicycle-outline"
           accentIcon="alert-circle"
@@ -192,7 +199,10 @@ export default function CourierDashboardScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Header title="Painel do Entregador" />
+      <Header
+        title="Painel do Entregador"
+        onBackPress={() => router.replace("/(tabs)/profile")}
+      />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}

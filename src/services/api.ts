@@ -12,6 +12,7 @@ import {
   Product,
   Restaurant,
   Review,
+  StoreCourier,
   StoreDeliveryRate,
 } from "@/src/types";
 import { mockCategories } from "@/src/mocks/categories";
@@ -63,7 +64,9 @@ async function fetchWithTimeout(url: string, options?: RequestInit): Promise<Res
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     try {
-      controller.abort("Timeout");
+      if (!controller.signal.aborted) {
+        controller.abort();
+      }
     } catch {
       // Ignora erro ao abortar
     }
@@ -83,9 +86,15 @@ async function fetchWithTimeout(url: string, options?: RequestInit): Promise<Res
     return res;
   } catch (error: any) {
     serverOnline = false;
-    // Evita vazamento de erro não tratado em navegadores quando o sinal for abortado
-    if (error?.name === "AbortError" || controller.signal.aborted) {
-      throw new Error("Timeout ao conectar com o servidor.");
+    const isAbort =
+      error?.name === "AbortError" ||
+      error?.message?.includes?.("abort") ||
+      error?.message?.includes?.("aborted") ||
+      controller.signal.aborted;
+    if (isAbort) {
+      const timeoutErr = new Error("Timeout ao conectar com o servidor.");
+      (timeoutErr as any).isTimeout = true;
+      throw timeoutErr;
     }
     throw error;
   } finally {
@@ -478,6 +487,132 @@ export const api = {
   },
 
   /**
+   * Loja solicita motoboy da rede autônoma do app Food Rush.
+   * Muda status para "ready", marca courierRequested = true e disponibiliza para todos os motoboys online.
+   */
+  async requestCourierForOrder(order: Order): Promise<void> {
+    const updatedOrder: Order = {
+      ...order,
+      status: "ready",
+      courierRequested: true,
+      deliveryMode: "independent_courier",
+    };
+
+    const all = await storageGet<Order[]>(STORAGE_KEYS.STORE_ORDERS, []);
+    await storageSet(
+      STORAGE_KEYS.STORE_ORDERS,
+      all.map((o) => (o.id === order.id ? updatedOrder : o))
+    );
+
+    const globalOrders = await storageGet<Order[]>(STORAGE_KEYS.ORDERS, []);
+    await storageSet(
+      STORAGE_KEYS.ORDERS,
+      globalOrders.map((o) => (o.id === order.id ? updatedOrder : o))
+    );
+
+    if (order.customerId) {
+      const key = ordersKeyOf(order.customerId);
+      const customerOrders = await storageGet<Order[]>(key, []);
+      await storageSet(
+        key,
+        customerOrders.map((o) => (o.id === order.id ? updatedOrder : o))
+      );
+    }
+
+    sendInBackground(`/orders/${encodeURIComponent(order.id)}/request-courier`, "POST", {});
+  },
+
+  /**
+   * Loja despacha o pedido usando um motoboy próprio cadastrado pela própria loja.
+   */
+  async assignStoreCourierToOrder(
+    order: Order,
+    courier: { id: string; name: string; phone?: string; vehicle?: string }
+  ): Promise<void> {
+    const updatedOrder: Order = {
+      ...order,
+      status: "out_for_delivery",
+      courierId: courier.id,
+      courierName: courier.name,
+      deliveryMode: "own_courier",
+    };
+
+    const all = await storageGet<Order[]>(STORAGE_KEYS.STORE_ORDERS, []);
+    await storageSet(
+      STORAGE_KEYS.STORE_ORDERS,
+      all.map((o) => (o.id === order.id ? updatedOrder : o))
+    );
+
+    const globalOrders = await storageGet<Order[]>(STORAGE_KEYS.ORDERS, []);
+    await storageSet(
+      STORAGE_KEYS.ORDERS,
+      globalOrders.map((o) => (o.id === order.id ? updatedOrder : o))
+    );
+
+    if (order.customerId) {
+      const key = ordersKeyOf(order.customerId);
+      const customerOrders = await storageGet<Order[]>(key, []);
+      await storageSet(
+        key,
+        customerOrders.map((o) => (o.id === order.id ? updatedOrder : o))
+      );
+    }
+
+    sendInBackground(
+      `/restaurants/${encodeURIComponent(order.restaurantId)}/orders/${encodeURIComponent(order.id)}/assign-courier`,
+      "POST",
+      { courierId: courier.id, courierName: courier.name, courierPhone: courier.phone, vehicle: courier.vehicle }
+    );
+  },
+
+  /**
+   * Obtém os motoboys próprios cadastrados pela loja parceira.
+   */
+  async getStoreCouriers(restaurantId: string): Promise<StoreCourier[]> {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/restaurants/${encodeURIComponent(restaurantId)}/couriers`);
+      if (res.ok) return await res.json();
+    } catch {
+      // Offline fallback
+    }
+    const all = await storageGet<StoreCourier[]>(`${STORAGE_KEYS.STORE_COURIERS}_${restaurantId}`, []);
+    return all;
+  },
+
+  /**
+   * Cadastra um novo motoboy próprio para a loja parceira.
+   */
+  async addStoreCourier(restaurantId: string, courier: Omit<StoreCourier, "id">): Promise<StoreCourier> {
+    const newCourier: StoreCourier = {
+      ...courier,
+      id: `sc-${restaurantId}-${Date.now()}`,
+      restaurantId,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    };
+    const key = `${STORAGE_KEYS.STORE_COURIERS}_${restaurantId}`;
+    const all = await storageGet<StoreCourier[]>(key, []);
+    await storageSet(key, [newCourier, ...all]);
+
+    sendInBackground(`/restaurants/${encodeURIComponent(restaurantId)}/couriers`, "POST", newCourier);
+    return newCourier;
+  },
+
+  /**
+   * Remove um motoboy próprio da loja parceira.
+   */
+  async deleteStoreCourier(restaurantId: string, courierId: string): Promise<void> {
+    const key = `${STORAGE_KEYS.STORE_COURIERS}_${restaurantId}`;
+    const all = await storageGet<StoreCourier[]>(key, []);
+    await storageSet(key, all.filter((c) => c.id !== courierId));
+
+    sendInBackground(
+      `/restaurants/${encodeURIComponent(restaurantId)}/couriers/${encodeURIComponent(courierId)}`,
+      "DELETE"
+    );
+  },
+
+  /**
    * Adiciona novo produto ao cardápio da loja parceira
    */
   async addStoreProduct(
@@ -862,9 +997,12 @@ export const api = {
     const storeOrders = await storageGet<Order[]>(STORAGE_KEYS.STORE_ORDERS, []);
     return storeOrders.filter(
       (o) =>
-        o.status === "preparing" ||
-        o.status === "ready" ||
-        (o.status === "placed" && !o.courierName)
+        (!o.courierId || o.courierRequested) &&
+        !o.courierName &&
+        (o.status === "ready" ||
+          o.courierRequested ||
+          (o.status === "preparing" && (o.deliveryMode === "independent_couriers" || o.deliveryMode === "independent_courier")) ||
+          (o.status === "placed" && o.courierRequested))
     );
   },
 
@@ -891,7 +1029,7 @@ export const api = {
             ...o,
             courierId,
             courierName,
-            status: "on_the_way" as OrderStatus,
+            status: "out_for_delivery" as OrderStatus,
           }
         : o
     );
@@ -902,6 +1040,30 @@ export const api = {
     const active = updated.find((o) => o.id === orderId);
     if (active) {
       await storageSet(STORAGE_KEYS.COURIER_ORDERS, [active, ...courierOrders.filter((o) => o.id !== orderId)]);
+    }
+
+    // Sincroniza com os pedidos globais do cliente
+    const globalOrders = await storageGet<Order[]>(STORAGE_KEYS.ORDERS, []);
+    await storageSet(
+      STORAGE_KEYS.ORDERS,
+      globalOrders.map((o) =>
+        o.id === orderId
+          ? { ...o, courierId, courierName, status: "out_for_delivery" as OrderStatus }
+          : o
+      )
+    );
+
+    if (active?.customerId) {
+      const key = ordersKeyOf(active.customerId);
+      const custOrders = await storageGet<Order[]>(key, []);
+      await storageSet(
+        key,
+        custOrders.map((o) =>
+          o.id === orderId
+            ? { ...o, courierId, courierName, status: "out_for_delivery" as OrderStatus }
+            : o
+        )
+      );
     }
 
     return active || storeOrders[0];
@@ -936,6 +1098,26 @@ export const api = {
         todayEarnings: (profile.todayEarnings ?? 0) + courierFee,
       });
     }
+  },
+
+  /**
+   * Obtém contas persistentes salvas no backend
+   */
+  async getRemoteAccounts(): Promise<any[]> {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/accounts`);
+      if (res.ok) return await res.json();
+    } catch {
+      // offline fallback
+    }
+    return [];
+  },
+
+  /**
+   * Sincroniza a lista de contas salvas com o backend
+   */
+  syncAccounts(accounts: any[]) {
+    sendInBackground("/auth/accounts", "POST", { accounts });
   },
 };
 

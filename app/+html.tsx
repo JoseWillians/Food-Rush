@@ -41,4 +41,13 @@ html, body {
   height: 100%;
   flex: 1;
   background-color: #f8f9fa;
+}
+input, textarea, select, [contenteditable] {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent;
+}
+input:focus, textarea:focus, select:focus, [contenteditable]:focus {
+  outline: none !important;
+  box-shadow: none !important;
 }`;

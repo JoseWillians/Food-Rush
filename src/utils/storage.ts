@@ -19,6 +19,7 @@ export const STORAGE_KEYS = {
   STORE_DELIVERY_RATES: "@foodrush:store_delivery_rates",
   COURIER_PROFILE: "@foodrush:courier_profile",
   COURIER_ORDERS: "@foodrush:courier_orders",
+  STORE_COURIERS: "@foodrush:store_couriers",
 } as const;
 
 export async function storageGet<T>(key: string, defaultValue: T): Promise<T> {

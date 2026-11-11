@@ -74,6 +74,7 @@ let motoboyTaxasConfig = seed.motoboyTaxasConfig || {
   platformFeePct: 15.0,
 };
 let couriers = [...(seed.couriers || [])];
+let storeCouriers = [];
 
 let restaurants = seed.restaurants.map((r) => ({
   ...r,
@@ -85,25 +86,7 @@ let restaurants = seed.restaurants.map((r) => ({
 
 let products = [...seed.products];
 let reviews = [...seed.reviews];
-
-// Middleware de isolamento estrito de lojas (RBAC)
-function verifyStoreOwnership(req, res, next) {
-  const userRole = req.headers["x-user-role"] || req.body.requesterRole;
-  const requesterStoreId = req.headers["x-store-id"] || req.body.requesterStoreId;
-  const targetStoreId = req.params.id || req.body.restaurantId;
-
-  if (
-    userRole === "partner" &&
-    requesterStoreId &&
-    targetStoreId &&
-    requesterStoreId !== targetStoreId
-  ) {
-    return res.status(403).json({
-      error: "Acesso negado: você só pode gerenciar e configurar a sua própria loja.",
-    });
-  }
-  next();
-}
+let serverAccounts = [];
 
 let inMemoryOrders = [
   {
@@ -130,6 +113,114 @@ let inMemoryOrders = [
     courierRating: 4.9,
   },
 ];
+
+// Persistência Resiliente em Disco (sobrevive a reinicializações de servidor e containers Docker)
+const STATE_FILE_PATHS = [
+  path.join(uploadsDir, ".foodrush-state.json"),
+  path.join(__dirname, "database", "persistent-state.json"),
+];
+
+function loadPersistentState() {
+  for (const filePath of STATE_FILE_PATHS) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, "utf-8");
+        const parsed = JSON.parse(raw);
+        console.log(`[FOOD RUSH STATE] Estado carregado com sucesso de: ${filePath}`);
+        return parsed;
+      }
+    } catch (err) {
+      console.warn(`[FOOD RUSH STATE] Falha ao ler ${filePath}:`, err.message);
+    }
+  }
+  return null;
+}
+
+function savePersistentState() {
+  const state = {
+    updatedAt: new Date().toISOString(),
+    restaurants,
+    products,
+    couriers,
+    storeCouriers,
+    inMemoryOrders,
+    accounts: serverAccounts,
+    bairros,
+    lojaTaxasBairro,
+    motoboyTaxasConfig,
+  };
+  const json = JSON.stringify(state, null, 2);
+  for (const filePath of STATE_FILE_PATHS) {
+    try {
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(filePath, json, "utf-8");
+    } catch {
+      // Ignora erro em caminhos secundários
+    }
+  }
+}
+
+// Carrega o estado salvo previamente, se existir
+const savedState = loadPersistentState();
+if (savedState) {
+  if (Array.isArray(savedState.restaurants) && savedState.restaurants.length > 0) {
+    restaurants = savedState.restaurants;
+  }
+  if (Array.isArray(savedState.products) && savedState.products.length > 0) {
+    products = savedState.products;
+  }
+  if (Array.isArray(savedState.couriers) && savedState.couriers.length > 0) {
+    couriers = savedState.couriers;
+  }
+  if (Array.isArray(savedState.storeCouriers)) {
+    storeCouriers = savedState.storeCouriers;
+  }
+  if (Array.isArray(savedState.inMemoryOrders) && savedState.inMemoryOrders.length > 0) {
+    inMemoryOrders = savedState.inMemoryOrders;
+  }
+  if (Array.isArray(savedState.accounts)) {
+    serverAccounts = savedState.accounts;
+  }
+  if (Array.isArray(savedState.bairros) && savedState.bairros.length > 0) {
+    bairros = savedState.bairros;
+  }
+  if (Array.isArray(savedState.lojaTaxasBairro) && savedState.lojaTaxasBairro.length > 0) {
+    lojaTaxasBairro = savedState.lojaTaxasBairro;
+  }
+}
+
+// Middleware de isolamento estrito de lojas (RBAC)
+function verifyStoreOwnership(req, res, next) {
+  const userRole = req.headers["x-user-role"] || req.body.requesterRole;
+  const requesterStoreId = req.headers["x-store-id"] || req.body.requesterStoreId;
+  const targetStoreId = req.params.id || req.body.restaurantId;
+
+  if (
+    userRole === "partner" &&
+    requesterStoreId &&
+    targetStoreId &&
+    requesterStoreId !== targetStoreId
+  ) {
+    return res.status(403).json({
+      error: "Acesso negado: você só pode gerenciar e configurar a sua própria loja.",
+    });
+  }
+  next();
+}
+
+// Endpoints de persistência de contas de usuário (clientes, parceiros e entregadores)
+app.get("/api/auth/accounts", (req, res) => {
+  res.json(serverAccounts || []);
+});
+
+app.post("/api/auth/accounts", (req, res) => {
+  if (Array.isArray(req.body.accounts)) {
+    serverAccounts = req.body.accounts;
+    savePersistentState();
+  }
+  res.json({ ok: true, count: serverAccounts.length });
+});
 
 // Rota raiz
 app.get("/", (req, res) => {
@@ -370,27 +461,102 @@ app.patch("/api/couriers/:id/status", (req, res) => {
       courier.isOnline = Boolean(req.body.isOnline);
     }
   }
+  savePersistentState();
   res.json(courier);
 });
 
+// Pedidos disponíveis para qualquer entregador da rede aceitar
 app.get("/api/couriers/:id/available-orders", (req, res) => {
   const available = inMemoryOrders.filter(
     (o) =>
-      o.status === "preparing" ||
-      o.status === "ready_for_pickup" ||
-      (o.status === "placed" && !o.courierId)
+      (!o.courierId || o.courierRequested) &&
+      !o.courierName &&
+      (o.status === "ready" ||
+        o.status === "ready_for_pickup" ||
+        o.courierRequested ||
+        (o.status === "preparing" && o.deliveryMode === "independent_couriers"))
   );
   res.json(available);
 });
 
+// Loja solicita / envia o pedido para entregadores autônomos da rede
+app.post("/api/orders/:id/request-courier", (req, res) => {
+  const order = inMemoryOrders.find((o) => o.id === req.params.id);
+  if (!order) return res.status(404).json({ error: "Pedido não encontrado." });
+  order.courierRequested = true;
+  if (order.status === "placed" || order.status === "preparing") {
+    order.status = "ready";
+  }
+  savePersistentState();
+  console.log(`[FOOD RUSH DISPATCH] Pedido ${order.id} disponibilizado para entregadores da rede.`);
+  res.json(order);
+});
+
+// Loja despacha o pedido com motoboy próprio
+app.post("/api/restaurants/:id/orders/:orderId/assign-courier", verifyStoreOwnership, (req, res) => {
+  const order = inMemoryOrders.find((o) => o.id === req.params.orderId && o.restaurantId === req.params.id);
+  if (!order) return res.status(404).json({ error: "Pedido não encontrado para esta loja." });
+  const { courierId, courierName, courierPhone, vehicle } = req.body;
+  order.courierId = courierId || `store-courier-${Date.now()}`;
+  order.courierName = courierName || "Motoboy da Loja";
+  order.courierPhone = courierPhone || "";
+  order.vehicle = vehicle || "Moto";
+  order.deliveryMode = "own_courier";
+  order.status = "out_for_delivery";
+  order.dispatchedAt = new Date().toISOString();
+  savePersistentState();
+  console.log(`[FOOD RUSH DISPATCH] Pedido ${order.id} despachado com motoboy próprio: ${order.courierName}`);
+  res.json(order);
+});
+
+// Cadastro e Gestão de Motoboys Próprios da Loja
+app.get("/api/restaurants/:id/couriers", (req, res) => {
+  const list = storeCouriers.filter((c) => c.restaurantId === req.params.id);
+  res.json(list);
+});
+
+app.post("/api/restaurants/:id/couriers", verifyStoreOwnership, (req, res) => {
+  const { name, phone, vehicle, vehicleType, plate } = req.body;
+  if (!name || !phone) {
+    return res.status(400).json({ error: "Nome e telefone do motoboy são obrigatórios." });
+  }
+  const newCourier = {
+    id: req.body.id || `sc-${req.params.id}-${Date.now()}`,
+    restaurantId: req.params.id,
+    name: String(name).trim(),
+    phone: String(phone).trim(),
+    vehicle: vehicle || "Moto",
+    vehicleType: vehicleType || "moto",
+    plate: plate ? String(plate).trim() : "",
+    isActive: true,
+    createdAt: new Date().toISOString(),
+  };
+  storeCouriers.push(newCourier);
+  savePersistentState();
+  console.log(`[FOOD RUSH STORE COURIER] Novo motoboy próprio cadastrado para loja ${req.params.id}: ${newCourier.name}`);
+  res.status(201).json(newCourier);
+});
+
+app.delete("/api/restaurants/:id/couriers/:courierId", verifyStoreOwnership, (req, res) => {
+  storeCouriers = storeCouriers.filter(
+    (c) => !(c.restaurantId === req.params.id && c.id === req.params.courierId)
+  );
+  savePersistentState();
+  res.status(204).end();
+});
+
+// Entregador da rede aceita a entrega do pedido
 app.post("/api/orders/:id/accept-delivery", (req, res) => {
   const { courierId, courierName } = req.body;
   const order = inMemoryOrders.find((o) => o.id === req.params.id);
   if (!order) return res.status(404).json({ error: "Pedido não encontrado." });
 
   order.courierId = courierId;
-  order.courierName = courierName || "Motoboy Food Rush";
+  order.courierName = courierName || "Entregador Parceiro";
   order.status = "out_for_delivery";
+  order.acceptedAt = new Date().toISOString();
+  savePersistentState();
+  console.log(`[FOOD RUSH DELIVERY] Pedido ${order.id} aceito pelo entregador ${order.courierName}`);
   res.json(order);
 });
 
@@ -486,6 +652,7 @@ app.post("/api/partners/register", (req, res) => {
   // Se a loja já existir (mesmo id), substitui em vez de duplicar
   restaurants = restaurants.filter((r) => r.id !== newRestaurant.id);
   restaurants.unshift(newRestaurant);
+  savePersistentState();
   console.log(`[FOOD RUSH API] Nova loja cadastrada: ${newRestaurant.name} (${newRestaurant.category}) por ${ownerName || ownerEmail}`);
 
   res.status(201).json(newRestaurant);
@@ -520,6 +687,7 @@ app.post("/api/restaurants/:id/products", verifyStoreOwnership, (req, res) => {
   };
 
   products.push(newProduct);
+  savePersistentState();
   console.log(`[FOOD RUSH API] Novo produto adicionado à loja ${restaurant.name}: ${newProduct.name} - R$ ${newProduct.price}`);
 
   res.status(201).json(newProduct);
@@ -531,7 +699,7 @@ app.put("/api/restaurants/:id", verifyStoreOwnership, (req, res) => {
   if (!restaurant) {
     return res.status(404).json({ error: "Restaurante não encontrado" });
   }
-  const { name, category, deliveryTime, deliveryFee, image } = req.body;
+  const { name, category, deliveryTime, deliveryFee, deliveryMode, image } = req.body;
   if (name !== undefined && !String(name).trim()) {
     return res.status(400).json({ error: "O nome da loja não pode ficar vazio." });
   }
@@ -543,8 +711,10 @@ app.put("/api/restaurants/:id", verifyStoreOwnership, (req, res) => {
     ...(category !== undefined && { category }),
     ...(deliveryTime !== undefined && { deliveryTime }),
     ...(deliveryFee !== undefined && { deliveryFee: Number(deliveryFee) }),
+    ...(deliveryMode !== undefined && { deliveryMode }),
     ...(image !== undefined && { image }),
   });
+  savePersistentState();
   res.json(restaurant);
 });
 
@@ -556,6 +726,7 @@ app.delete("/api/restaurants/:id", verifyStoreOwnership, (req, res) => {
   }
   restaurants = restaurants.filter((r) => r.id !== req.params.id);
   products = products.filter((p) => p.restaurantId !== req.params.id);
+  savePersistentState();
   res.status(204).end();
 });
 
@@ -579,6 +750,7 @@ app.put("/api/products/:id", (req, res) => {
     ...(category !== undefined && { category }),
     ...(image !== undefined && { image }),
   });
+  savePersistentState();
   res.json(product);
 });
 
@@ -589,6 +761,7 @@ app.delete("/api/products/:id", (req, res) => {
     return res.status(404).json({ error: "Produto não encontrado" });
   }
   products = products.filter((p) => p.id !== req.params.id);
+  savePersistentState();
   res.status(204).end();
 });
 
@@ -599,6 +772,7 @@ app.patch("/api/restaurants/:id/status", verifyStoreOwnership, (req, res) => {
     return res.status(404).json({ error: "Restaurante não encontrado" });
   }
   restaurant.isOpen = Boolean(req.body.isOpen);
+  savePersistentState();
   res.json(restaurant);
 });
 
@@ -636,6 +810,7 @@ app.post("/api/restaurants/:id/reviews", (req, res) => {
   const total = restaurant.rating * restaurant.reviewCount + nota;
   restaurant.reviewCount += 1;
   restaurant.rating = Math.round((total / restaurant.reviewCount) * 10) / 10;
+  savePersistentState();
 
   res.status(201).json(newReview);
 });
@@ -652,12 +827,11 @@ app.post("/api/orders", (req, res) => {
   const newOrder = {
     id: `ord-${Date.now()}`,
     createdAt: new Date().toISOString(),
-    status: "out_for_delivery",
-    courierName: "Policarpo de Sousa",
-    courierRating: 4.9,
+    status: req.body.status || "placed",
     ...req.body,
   };
   inMemoryOrders.unshift(newOrder);
+  savePersistentState();
   console.log(`[FOOD RUSH API] Novo pedido recebido: ${newOrder.id} - Total: R$ ${newOrder.total}`);
   res.status(201).json(newOrder);
 });
@@ -666,7 +840,10 @@ app.patch("/api/orders/:id/status", (req, res) => {
   const { status } = req.body;
   const order = inMemoryOrders.find((o) => o.id === req.params.id);
   if (!order) return res.status(404).json({ error: "Pedido não encontrado" });
-  order.status = status;
+  if (status) {
+    order.status = status;
+  }
+  savePersistentState();
   res.json(order);
 });
 

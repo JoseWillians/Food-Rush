@@ -21,6 +21,24 @@ import { colors } from "@/src/theme/colors";
 // Apenas no mobile evita sumiço precoce da tela nativa de splash
 if (Platform.OS !== "web") {
   SplashScreen.preventAutoHideAsync().catch(() => {});
+} else if (typeof document !== "undefined") {
+  const styleId = "foodrush-web-style-reset";
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      input, textarea, select, [contenteditable] {
+        outline: none !important;
+        box-shadow: none !important;
+        -webkit-tap-highlight-color: transparent !important;
+      }
+      input:focus, textarea:focus, select:focus, [contenteditable]:focus {
+        outline: none !important;
+        box-shadow: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
 }
 
 /**

@@ -79,9 +79,12 @@ export type Order = {
   customerName?: string;
   bairroId?: string;
   bairroName?: string;
-  deliveryMode?: "own_courier" | "independent_courier";
+  deliveryMode?: "own_courier" | "independent_courier" | "independent_couriers";
   courierFee?: number;
   storeEarning?: number;
+  courierRequested?: boolean;
+  storeCourierId?: string;
+  vehicle?: string;
 };
 
 export type UserAddress = {
@@ -243,4 +246,20 @@ export type Category = {
   name: string;
   icon: string;
 };
+
+/**
+ * Motoboy / Entregador próprio vinculado diretamente a uma loja parceira
+ */
+export type StoreCourier = {
+  id: string;
+  restaurantId: string;
+  name: string;
+  phone: string;
+  vehicle: string;
+  vehicleType: "moto" | "bicicleta" | "carro";
+  plate?: string;
+  isActive: boolean;
+  createdAt?: string;
+};
+
 

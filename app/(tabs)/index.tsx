@@ -916,6 +916,8 @@ const styles = StyleSheet.create({
     bottom: 12,
     left: spacing.lg,
     right: spacing.lg,
+    zIndex: 9999,
+    elevation: 12,
   },
   cartBarButton: {
     backgroundColor: colors.primary,

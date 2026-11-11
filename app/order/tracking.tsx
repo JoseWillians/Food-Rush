@@ -71,6 +71,26 @@ export default function OrderTrackingScreen() {
     }, [reloadOrders])
   );
 
+  // Polling em tempo real do estágio de entrega enquanto o pedido estiver ativo
+  useEffect(() => {
+    if (!activeOrder) return;
+    const isOngoing =
+      activeOrder.status === "placed" ||
+      activeOrder.status === "preparing" ||
+      activeOrder.status === "ready" ||
+      activeOrder.status === "out_for_delivery" ||
+      activeOrder.status === "on_the_way" ||
+      activeOrder.status === "arriving";
+
+    if (!isOngoing) return;
+
+    const intervalId = setInterval(() => {
+      reloadOrders();
+    }, 2500);
+
+    return () => clearInterval(intervalId);
+  }, [activeOrder?.status, reloadOrders]);
+
   // Bolinha pulsando ao lado do título do status
   const pulseAnim = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -89,7 +109,10 @@ export default function OrderTrackingScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar style="dark" />
-        <Header title="Acompanhar Pedido" />
+        <Header
+          title="Acompanhar Pedido"
+          onBackPress={() => router.replace("/(tabs)/orders")}
+        />
         <EmptyState
           icon="bicycle-outline"
           accentIcon="location"
@@ -127,7 +150,10 @@ export default function OrderTrackingScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      <Header title="Acompanhar Pedido" />
+      <Header
+        title="Acompanhar Pedido"
+        onBackPress={() => router.replace("/(tabs)/orders")}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <DeliveryMap

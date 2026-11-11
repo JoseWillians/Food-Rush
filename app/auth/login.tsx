@@ -198,8 +198,9 @@ export default function AuthScreen() {
 
     if (accountType === "partner") {
       if (!storeName.trim()) errors.storeName = "Informe o nome da sua loja.";
-      if (parsePrice(storeDeliveryFee) === null)
+      if (storeDeliveryMode === "own_courier" && parsePrice(storeDeliveryFee) === null) {
         errors.storeFee = "Digite um valor válido. Ex: 5,99 ou 0";
+      }
       if (!storeDeliveryTime.trim()) errors.storeTime = "Informe o tempo de entrega.";
       if (storePhone.trim() && !isValidPhone(storePhone))
         errors.storePhone = "Digite o DDD e o número completo.";
@@ -227,7 +228,10 @@ export default function AuthScreen() {
               name: storeName.trim(),
               category: storeCategory,
               deliveryTime: storeDeliveryTime.trim(),
-              deliveryFee: parsePrice(storeDeliveryFee) ?? 0,
+              deliveryFee:
+                storeDeliveryMode === "independent_couriers"
+                  ? 6.0
+                  : parsePrice(storeDeliveryFee) ?? 0,
               address: storeAddress.trim() || `${storeNeighborhood}, Santa Inês - MA`,
               phone: storePhone.trim() || regPhone,
               isOpen: true,
@@ -814,6 +818,15 @@ export default function AuthScreen() {
                     </Pressable>
                   </View>
 
+                  {storeDeliveryMode === "independent_couriers" && (
+                    <View style={styles.autoFeeNotice}>
+                      <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
+                      <Text style={styles.autoFeeNoticeText}>
+                        Na <Text style={{ fontFamily: typography.semiBold }}>Rede Autônoma</Text>, a taxa é calculada automaticamente por bairro (a partir de R$ 6,00 em Santa Inês) e 85% do valor vai direto para o motoboy parceiro.
+                      </Text>
+                    </View>
+                  )}
+
                   <View style={styles.nameRow}>
                     <View style={styles.halfInput}>
                       <AppInput
@@ -826,9 +839,22 @@ export default function AuthScreen() {
                     </View>
                     <View style={styles.halfInput}>
                       <AppInput
-                        label="Taxa de Entrega (R$)"
-                        placeholder="Ex: 5.99"
-                        value={storeDeliveryFee}
+                        label={
+                          storeDeliveryMode === "independent_couriers"
+                            ? "Taxa de Entrega (Rede)"
+                            : "Taxa de Entrega (R$)"
+                        }
+                        placeholder={
+                          storeDeliveryMode === "independent_couriers"
+                            ? "Automática por bairro"
+                            : "Ex: 5.99"
+                        }
+                        value={
+                          storeDeliveryMode === "independent_couriers"
+                            ? "Automática por bairro"
+                            : storeDeliveryFee
+                        }
+                        editable={storeDeliveryMode !== "independent_couriers"}
                         onChangeText={setStoreDeliveryFee}
                         keyboardType="decimal-pad"
                         error={regErrors.storeFee}
@@ -1391,6 +1417,24 @@ const styles = StyleSheet.create({
   dropdownItemTextSelected: {
     fontFamily: typography.bold,
     color: colors.primary,
+  },
+  autoFeeNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.xs,
+    backgroundColor: colors.primaryLight,
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  autoFeeNoticeText: {
+    flex: 1,
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.text,
+    lineHeight: 18,
   },
 });
 

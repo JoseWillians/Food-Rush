@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,6 +10,7 @@ import {
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@/src/theme/colors";
 import { borderRadius, spacing } from "@/src/theme/spacing";
 import { fontSizes, typography } from "@/src/theme/typography";
@@ -17,44 +19,49 @@ import { AppButton } from "@/src/components/ui/AppButton";
 import { EmptyState } from "@/src/components/ui/EmptyState";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { api } from "@/src/services/api";
-import { Order, OrderStatus } from "@/src/types";
+import { Order, OrderStatus, StoreCourier } from "@/src/types";
 import { formatCurrency } from "@/src/utils/currency";
+import { showMessage } from "@/src/utils/dialog";
 
 // Texto e cor de cada etapa, e qual é a próxima ação da loja
 const STATUS_INFO: Record<
   OrderStatus,
   { label: string; color: string; next?: OrderStatus; action?: string }
 > = {
-  placed: { label: "Novo pedido", color: colors.primary, next: "preparing", action: "Aceitar pedido" },
-  preparing: { label: "Em preparo", color: colors.warning, next: "ready", action: "Marcar como pronto" },
-  ready: { label: "Pronto para entrega", color: colors.success, next: "out_for_delivery", action: "Despachar pedido" },
+  placed: { label: "Novo pedido", color: colors.primary, next: "preparing", action: "Aceitar e Preparar" },
+  preparing: { label: "Em preparo", color: colors.warning, next: "ready", action: "Marcar como Pronto" },
+  ready: { label: "Pronto para entrega", color: colors.success, next: "out_for_delivery", action: "Despachar" },
   out_for_delivery: { label: "Saiu para entrega", color: colors.success },
   on_the_way: { label: "Em rota de entrega", color: colors.success },
-  arriving: { label: "Chegando", color: colors.success },
+  arriving: { label: "Chegando ao cliente", color: colors.success },
   delivered: { label: "Entregue", color: colors.textSecondary },
   cancelled: { label: "Cancelado", color: colors.error },
 };
 
 type Filter = "open" | "done";
 
-/**
- * Pedidos recebidos pela loja do empreendedor.
- * Fluxo: Novo pedido → Aceitar (em preparo) → Enviar (saiu para entrega).
- * Depois o cliente confirma o recebimento na tela de acompanhamento.
- */
 export default function StoreOrdersScreen() {
   const { user } = useAuth();
   const storeId = user?.store?.id;
 
   const [orders, setOrders] = useState<Order[]>([]);
+  const [storeCouriers, setStoreCouriers] = useState<StoreCourier[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("open");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
+  // Modal para escolher qual motoboy próprio vai fazer a entrega
+  const [selectedOrderForCourier, setSelectedOrderForCourier] = useState<Order | null>(null);
+
   const loadOrders = useCallback(async () => {
     if (!storeId) return;
     try {
-      setOrders(await api.getStoreOrders(storeId));
+      const [ords, cours] = await Promise.all([
+        api.getStoreOrders(storeId),
+        api.getStoreCouriers(storeId),
+      ]);
+      setOrders(ords);
+      setStoreCouriers(cours);
     } finally {
       setLoading(false);
     }
@@ -63,6 +70,10 @@ export default function StoreOrdersScreen() {
   useFocusEffect(
     useCallback(() => {
       loadOrders();
+      const intervalId = setInterval(() => {
+        loadOrders();
+      }, 3000);
+      return () => clearInterval(intervalId);
     }, [loadOrders])
   );
 
@@ -78,12 +89,50 @@ export default function StoreOrdersScreen() {
     }
   };
 
+  // Envia o pedido para entregadores autônomos da rede Food Rush
+  const handleRequestNetworkCourier = async (order: Order) => {
+    setUpdatingId(order.id);
+    try {
+      await api.requestCourierForOrder(order);
+      showMessage(
+        "Chamado Enviado!",
+        "O pedido foi enviado aos entregadores parceiros disponíveis em Santa Inês. Assim que um motoboy aceitar, a tela atualizará automaticamente."
+      );
+      await loadOrders();
+    } catch (err: any) {
+      showMessage("Erro", err?.message || "Não foi possível chamar entregador.");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // Despacha o pedido com motoboy próprio
+  const handleAssignOwnCourier = async (order: Order, courier: StoreCourier) => {
+    setUpdatingId(order.id);
+    setSelectedOrderForCourier(null);
+    try {
+      await api.assignStoreCourierToOrder(order, courier);
+      showMessage(
+        "Pedido Despachado!",
+        `O pedido foi atribuído ao seu entregador ${courier.name}.`
+      );
+      await loadOrders();
+    } catch (err: any) {
+      showMessage("Erro", err?.message || "Não foi possível despachar o pedido.");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   const isDone = (o: Order) => o.status === "out_for_delivery" || o.status === "arriving" || o.status === "delivered";
   const visible = orders.filter((o) => (filter === "open" ? !isDone(o) : isDone(o)));
 
   return (
     <SafeAreaView style={styles.container}>
-      <Header title="Pedidos da Loja" />
+      <Header
+        title="Pedidos da Loja"
+        onBackPress={() => router.replace("/store")}
+      />
 
       {/* Abas: Em aberto | Enviados */}
       <View style={styles.tabs}>
@@ -151,9 +200,88 @@ export default function StoreOrdersScreen() {
                 <Text style={styles.address}>Entregar em: {order.deliveryAddress}</Text>
                 <Text style={styles.total}>Total: {formatCurrency(order.total)}</Text>
 
-                {info.next && (
+                {/* Status do entregador vinculado ou aguardando */}
+                {order.courierName ? (
+                  <View style={styles.courierAssignedCard}>
+                    <Ionicons name="bicycle" size={16} color={colors.primary} />
+                    <Text style={styles.courierAssignedText}>
+                      Entregador: <Text style={{ fontFamily: typography.bold }}>{order.courierName}</Text>
+                      {order.vehicle ? ` (${order.vehicle})` : ""}
+                    </Text>
+                  </View>
+                ) : order.courierRequested ? (
+                  <View style={styles.courierWaitingCard}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text style={styles.courierWaitingText}>
+                      Chamado enviado à Rede! Aguardando entregador autônomo aceitar...
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Ações dinâmicas de despacho */}
+                {order.status === "placed" && (
                   <AppButton
-                    title={info.action ?? "Avançar"}
+                    title="Aceitar e Iniciar Preparo"
+                    onPress={() => handleAdvance(order)}
+                    loading={updatingId === order.id}
+                    size="sm"
+                    style={{ marginTop: spacing.sm }}
+                  />
+                )}
+
+                {order.status === "preparing" && (
+                  <View style={styles.actionButtonGroup}>
+                    <AppButton
+                      title="Marcar como Pronto"
+                      variant="outline"
+                      onPress={() => handleAdvance(order)}
+                      loading={updatingId === order.id}
+                      size="sm"
+                      style={{ flex: 1 }}
+                    />
+                    <AppButton
+                      title="Mandar para Entregador"
+                      onPress={() => handleRequestNetworkCourier(order)}
+                      loading={updatingId === order.id}
+                      size="sm"
+                      style={{ flex: 1 }}
+                    />
+                  </View>
+                )}
+
+                {order.status === "ready" && (
+                  <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
+                    {!order.courierRequested && (
+                      <AppButton
+                        title="Chamar Entregador do App (Rede)"
+                        onPress={() => handleRequestNetworkCourier(order)}
+                        loading={updatingId === order.id}
+                        size="sm"
+                      />
+                    )}
+                    {storeCouriers.length > 0 && (
+                      <AppButton
+                        title="Despachar com Motoboy Próprio"
+                        variant="outline"
+                        onPress={() => setSelectedOrderForCourier(order)}
+                        size="sm"
+                      />
+                    )}
+                    {storeCouriers.length === 0 && !order.courierRequested && (
+                      <AppButton
+                        title="Despachar Pedido Direto"
+                        variant="outline"
+                        onPress={() => handleAdvance(order)}
+                        loading={updatingId === order.id}
+                        size="sm"
+                      />
+                    )}
+                  </View>
+                )}
+
+                {(order.status === "out_for_delivery" || order.status === "arriving") && (
+                  <AppButton
+                    title="Marcar como Entregue ao Cliente"
                     onPress={() => handleAdvance(order)}
                     loading={updatingId === order.id}
                     size="sm"
@@ -165,6 +293,50 @@ export default function StoreOrdersScreen() {
           })
         )}
       </ScrollView>
+
+      {/* Modal para escolher motoboy próprio */}
+      <Modal
+        visible={Boolean(selectedOrderForCourier)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedOrderForCourier(null)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setSelectedOrderForCourier(null)}
+        >
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>Despachar com Motoboy Próprio</Text>
+            <Text style={styles.modalSubtitle}>
+              Selecione qual motoboy cadastrado da sua loja fará esta entrega:
+            </Text>
+            {storeCouriers.map((c) => (
+              <Pressable
+                key={c.id}
+                style={styles.modalCourierItem}
+                onPress={() => selectedOrderForCourier && handleAssignOwnCourier(selectedOrderForCourier, c)}
+              >
+                <View style={styles.modalCourierIcon}>
+                  <Ionicons name="bicycle" size={20} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalCourierName}>{c.name}</Text>
+                  <Text style={styles.modalCourierMeta}>
+                    {c.vehicle} {c.plate ? `• Placa: ${c.plate}` : ""} {c.phone ? `• Tel: ${c.phone}` : ""}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.gray400} />
+              </Pressable>
+            ))}
+            <AppButton
+              title="Cancelar"
+              variant="outline"
+              onPress={() => setSelectedOrderForCourier(null)}
+              style={{ marginTop: spacing.md }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -259,5 +431,92 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.md,
     fontFamily: typography.bold,
     color: colors.text,
+  },
+  courierAssignedCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.primaryLight,
+    padding: spacing.xs + 2,
+    borderRadius: borderRadius.md,
+    marginTop: spacing.xs,
+  },
+  courierAssignedText: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.text,
+  },
+  courierWaitingCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.gray100,
+    padding: spacing.xs + 2,
+    borderRadius: borderRadius.md,
+    marginTop: spacing.xs,
+  },
+  courierWaitingText: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.medium,
+    color: colors.primary,
+  },
+  actionButtonGroup: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: borderRadius.lg,
+    borderTopRightRadius: borderRadius.lg,
+    padding: spacing.lg,
+    maxHeight: "70%",
+  },
+  modalTitle: {
+    fontSize: fontSizes.lg,
+    fontFamily: typography.bold,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  modalSubtitle: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  modalCourierItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.xs,
+    backgroundColor: colors.gray100,
+  },
+  modalCourierIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.sm,
+  },
+  modalCourierName: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.bold,
+    color: colors.text,
+  },
+  modalCourierMeta: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
   },
 });

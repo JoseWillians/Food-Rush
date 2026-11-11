@@ -22,7 +22,7 @@ import { EmptyState } from "@/src/components/ui/EmptyState";
 import { FoodCard } from "@/src/components/food/FoodCard";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { api } from "@/src/services/api";
-import { Neighborhood, Product, StoreDeliveryRate } from "@/src/types";
+import { Neighborhood, Product, StoreCourier, StoreDeliveryRate } from "@/src/types";
 import { formatCurrency } from "@/src/utils/currency";
 import { confirmDialog, showMessage } from "@/src/utils/dialog";
 import { parsePrice } from "@/src/utils/validation";
@@ -73,7 +73,18 @@ export default function StoreDashboardScreen() {
   const [storeCat, setStoreCat] = useState("Lanches");
   const [storeTime, setStoreTime] = useState("");
   const [storeFee, setStoreFee] = useState("");
+  const [storeDeliveryMode, setStoreDeliveryMode] = useState<"own_courier" | "independent_couriers" | "both">("own_courier");
   const [storeErrors, setStoreErrors] = useState<FieldErrors>({});
+
+  // ----- Motoboys próprios da loja -----
+  const [storeCouriers, setStoreCouriers] = useState<StoreCourier[]>([]);
+  const [showCourierForm, setShowCourierForm] = useState(false);
+  const [courierName, setCourierName] = useState("");
+  const [courierPhone, setCourierPhone] = useState("");
+  const [courierVehicleType, setCourierVehicleType] = useState<"moto" | "bicicleta" | "carro">("moto");
+  const [courierPlate, setCourierPlate] = useState("");
+  const [savingCourier, setSavingCourier] = useState(false);
+  const [courierErrors, setCourierErrors] = useState<FieldErrors>({});
 
   const cityId = (store as any)?.cityId || "cidade-santa-ines";
 
@@ -81,15 +92,17 @@ export default function StoreDashboardScreen() {
     if (!store) return;
     setLoadingProducts(true);
     try {
-      const [prods, orders, neighs, rates] = await Promise.all([
+      const [prods, orders, neighs, rates, couriers] = await Promise.all([
         api.getProducts(store.id),
         api.getStoreOrders(store.id),
         api.getNeighborhoods(cityId),
         api.getStoreDeliveryRates(store.id),
+        api.getStoreCouriers(store.id),
       ]);
       setProducts(prods);
       setNeighborhoods(neighs);
       setStoreRates(rates);
+      setStoreCouriers(couriers);
       // Pedidos que ainda precisam de ação da loja
       setPendingOrders(
         orders.filter((o) => o.status === "placed" || o.status === "preparing").length
@@ -108,7 +121,10 @@ export default function StoreDashboardScreen() {
   if (!store) {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="Minha Loja" />
+        <Header
+          title="Minha Loja"
+          onBackPress={() => router.replace("/(tabs)/profile")}
+        />
         <EmptyState
           icon="storefront-outline"
           accentIcon="add"
@@ -147,17 +163,24 @@ export default function StoreDashboardScreen() {
     setStoreName(store.name);
     setStoreCat(store.category);
     setStoreTime(store.deliveryTime ?? "30-45 min");
-    setStoreFee((store.deliveryFee ?? 0).toFixed(2).replace(".", ","));
+    setStoreFee(
+      store.deliveryMode === "independent_couriers"
+        ? "Automática"
+        : (store.deliveryFee ?? 0).toFixed(2).replace(".", ",")
+    );
+    setStoreDeliveryMode(store.deliveryMode || "own_courier");
     setStoreErrors({});
     setEditingStore(true);
   };
 
   const handleSaveStore = async () => {
     const errors: FieldErrors = {};
-    const fee = parsePrice(storeFee);
+    const fee = storeDeliveryMode === "independent_couriers" ? 6.0 : parsePrice(storeFee);
     if (!storeName.trim()) errors.name = "Informe o nome da loja.";
     if (!storeTime.trim()) errors.time = "Informe o tempo médio.";
-    if (fee === null) errors.fee = "Use só números. Ex: 5,99 ou 0";
+    if (storeDeliveryMode === "own_courier" && fee === null) {
+      errors.fee = "Use só números. Ex: 5,99 ou 0";
+    }
     setStoreErrors(errors);
     if (Object.keys(errors).length > 0 || fee === null) return;
 
@@ -166,11 +189,61 @@ export default function StoreDashboardScreen() {
       category: storeCat,
       deliveryTime: storeTime.trim(),
       deliveryFee: fee,
+      deliveryMode: storeDeliveryMode,
     };
     await updateUser({ store: { ...store, ...changes } });
     await api.updateStore(store.id, changes);
     setEditingStore(false);
     showMessage("Loja atualizada", "Os dados da sua loja foram salvos.");
+  };
+
+  // ---------- Motoboys Próprios da Loja ----------
+  const handleSaveStoreCourier = async () => {
+    const errors: FieldErrors = {};
+    if (!courierName.trim()) errors.name = "Informe o nome do motoboy.";
+    if (!courierPhone.trim()) errors.phone = "Informe o celular/WhatsApp.";
+    if (courierVehicleType !== "bicicleta" && !courierPlate.trim()) {
+      errors.plate = "Informe a placa do veículo.";
+    }
+    setCourierErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    setSavingCourier(true);
+    try {
+      await api.addStoreCourier(store.id, {
+        restaurantId: store.id,
+        name: courierName.trim(),
+        phone: courierPhone.trim(),
+        vehicleType: courierVehicleType,
+        vehicle: courierVehicleType === "moto" ? "Motocicleta" : courierVehicleType === "bicicleta" ? "Bicicleta" : "Carro",
+        plate: courierPlate.toUpperCase().trim(),
+        isActive: true,
+      });
+      setShowCourierForm(false);
+      setCourierName("");
+      setCourierPhone("");
+      setCourierPlate("");
+      setCourierErrors({});
+      showMessage("Motoboy cadastrado", "Seu motoboy próprio foi adicionado com sucesso!");
+      await loadData();
+    } catch (err: any) {
+      showMessage("Erro", err?.message || "Não foi possível cadastrar o motoboy.");
+    } finally {
+      setSavingCourier(false);
+    }
+  };
+
+  const handleDeleteStoreCourier = async (c: StoreCourier) => {
+    const ok = await confirmDialog(
+      "Remover motoboy",
+      `Deseja remover ${c.name} da lista de motoboys próprios da loja?`,
+      "Remover",
+      true
+    );
+    if (!ok) return;
+    await api.deleteStoreCourier(store.id, c.id);
+    showMessage("Removido", `${c.name} foi removido.`);
+    await loadData();
   };
 
   // ---------- Loja: excluir ----------
@@ -263,7 +336,46 @@ export default function StoreDashboardScreen() {
     await loadData();
   };
 
-  // ---------- Upload de Foto de Prato / Produto ----------
+  // ---------- Upload e Captura de Foto de Prato / Produto ----------
+  const handleCameraProductImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        showMessage("Permissão necessária", "Permita o acesso à câmera para fotografar o prato.");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setUploadingImage(true);
+        try {
+          if (asset.base64) {
+            const res = await api.uploadImage({
+              base64: `data:image/jpeg;base64,${asset.base64}`,
+              fileName: `product-cam-${Date.now()}.jpg`,
+              folder: "products",
+            });
+            setProdImage(res.url);
+            showMessage("Foto capturada", "Foto do prato adicionada com sucesso!");
+          } else if (asset.uri) {
+            setProdImage(asset.uri);
+          }
+        } finally {
+          setUploadingImage(false);
+        }
+      }
+    } catch (err: any) {
+      setUploadingImage(false);
+      showMessage("Erro na câmera", err?.message || "Não foi possível abrir a câmera.");
+    }
+  };
+
   const handlePickProductImage = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -348,7 +460,10 @@ export default function StoreDashboardScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Header title="Minha Loja" />
+      <Header
+        title="Minha Loja"
+        onBackPress={() => router.replace("/(tabs)/profile")}
+      />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -385,6 +500,52 @@ export default function StoreDashboardScreen() {
                   );
                 })}
               </View>
+
+              {/* Modalidade de Entrega */}
+              <Text style={styles.chipsLabel}>Modalidade de Entrega</Text>
+              <View style={styles.chipsRow}>
+                <Pressable
+                  style={[styles.chip, storeDeliveryMode === "own_courier" && styles.chipSelected]}
+                  onPress={() => setStoreDeliveryMode("own_courier")}
+                  accessibilityRole="button"
+                >
+                  <Ionicons
+                    name="bicycle"
+                    size={14}
+                    color={storeDeliveryMode === "own_courier" ? colors.white : colors.gray400}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.chipText, storeDeliveryMode === "own_courier" && styles.chipTextSelected]}>
+                    Motoboy Próprio
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[styles.chip, storeDeliveryMode === "independent_couriers" && styles.chipSelected]}
+                  onPress={() => setStoreDeliveryMode("independent_couriers")}
+                  accessibilityRole="button"
+                >
+                  <Ionicons
+                    name="people"
+                    size={14}
+                    color={storeDeliveryMode === "independent_couriers" ? colors.white : colors.gray400}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.chipText, storeDeliveryMode === "independent_couriers" && styles.chipTextSelected]}>
+                    Rede Autônoma (Food Rush)
+                  </Text>
+                </Pressable>
+              </View>
+
+              {storeDeliveryMode === "independent_couriers" && (
+                <View style={styles.autoFeeBox}>
+                  <Ionicons name="information-circle-outline" size={16} color={colors.primary} />
+                  <Text style={styles.autoFeeBoxText}>
+                    Na Rede Autônoma, os entregadores do aplicativo realizam as entregas e as taxas são calculadas automaticamente por bairro. A loja não define taxa manual.
+                  </Text>
+                </View>
+              )}
+
               <View style={styles.row}>
                 <View style={styles.half}>
                   <AppInput
@@ -396,8 +557,22 @@ export default function StoreDashboardScreen() {
                 </View>
                 <View style={styles.half}>
                   <AppInput
-                    label="Taxa de entrega (R$)"
-                    value={storeFee}
+                    label={
+                      storeDeliveryMode === "independent_couriers"
+                        ? "Taxa de entrega (Rede)"
+                        : "Taxa de entrega (R$)"
+                    }
+                    placeholder={
+                      storeDeliveryMode === "independent_couriers"
+                        ? "Automática"
+                        : "Ex: 5.99"
+                    }
+                    value={
+                      storeDeliveryMode === "independent_couriers"
+                        ? "Automática por bairro"
+                        : storeFee
+                    }
+                    editable={storeDeliveryMode !== "independent_couriers"}
                     onChangeText={setStoreFee}
                     keyboardType="decimal-pad"
                     error={storeErrors.fee}
@@ -421,8 +596,22 @@ export default function StoreDashboardScreen() {
                   <Text style={styles.storeName}>{store.name}</Text>
                   <Text style={styles.storeMeta}>
                     {store.category} · {store.deliveryTime ?? "30-45 min"} · Taxa{" "}
-                    {formatCurrency(store.deliveryFee ?? 0)}
+                    {store.deliveryMode === "independent_couriers"
+                      ? "Calculada por bairro"
+                      : formatCurrency(store.deliveryFee ?? 0)}
                   </Text>
+                  <View style={styles.storeDeliveryTag}>
+                    <Ionicons
+                      name={store.deliveryMode === "independent_couriers" ? "people" : "bicycle"}
+                      size={13}
+                      color={colors.primary}
+                    />
+                    <Text style={styles.storeDeliveryTagText}>
+                      {store.deliveryMode === "independent_couriers"
+                        ? "Rede Autônoma de Entregadores"
+                        : "Motoboy Próprio da Loja"}
+                    </Text>
+                  </View>
                 </View>
                 <Pressable
                   onPress={openStoreEdit}
@@ -458,7 +647,7 @@ export default function StoreDashboardScreen() {
           <Ionicons name="receipt-outline" size={22} color={colors.primary} />
           <View style={{ flex: 1 }}>
             <Text style={styles.ordersTitle}>Pedidos recebidos</Text>
-            <Text style={styles.ordersSub}>Aceitar, preparar e enviar pedidos</Text>
+            <Text style={styles.ordersSub}>Aceitar, preparar e despachar para entregador</Text>
           </View>
           {pendingOrders > 0 && (
             <View style={styles.badge}>
@@ -467,6 +656,109 @@ export default function StoreDashboardScreen() {
           )}
           <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
         </Pressable>
+
+        {/* ===== Motoboys Próprios da Loja ===== */}
+        <View style={styles.card}>
+          <View style={styles.cardHeaderWithAction}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Motoboys Próprios da Loja</Text>
+              <Text style={styles.cardSubtitle}>
+                Cadastre entregadores fixos da sua loja para despachar pedidos.
+              </Text>
+            </View>
+            <Pressable
+              style={styles.addSmallBtn}
+              onPress={() => setShowCourierForm((prev) => !prev)}
+            >
+              <Ionicons
+                name={showCourierForm ? "close" : "add"}
+                size={16}
+                color={colors.white}
+              />
+              <Text style={styles.addSmallBtnText}>
+                {showCourierForm ? "Fechar" : "Novo Motoboy"}
+              </Text>
+            </Pressable>
+          </View>
+
+          {showCourierForm && (
+            <View style={styles.newCourierBox}>
+              <Text style={styles.subFormTitle}>Cadastrar Motoboy Próprio</Text>
+              <AppInput
+                label="Nome do Motoboy"
+                placeholder="Ex: Carlos Oliveira"
+                value={courierName}
+                onChangeText={setCourierName}
+                error={courierErrors.name}
+              />
+              <AppInput
+                label="Celular / WhatsApp"
+                placeholder="Ex: (98) 98888-0000"
+                value={courierPhone}
+                onChangeText={setCourierPhone}
+                keyboardType="phone-pad"
+                error={courierErrors.phone}
+              />
+              <Text style={styles.chipsLabel}>Tipo de Veículo</Text>
+              <View style={styles.chipsRow}>
+                {(["moto", "bicicleta", "carro"] as const).map((vt) => (
+                  <Pressable
+                    key={vt}
+                    style={[styles.chip, courierVehicleType === vt && styles.chipSelected]}
+                    onPress={() => setCourierVehicleType(vt)}
+                  >
+                    <Text style={[styles.chipText, courierVehicleType === vt && styles.chipTextSelected]}>
+                      {vt === "moto" ? "Moto" : vt === "bicicleta" ? "Bicicleta" : "Carro"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              {courierVehicleType !== "bicicleta" && (
+                <AppInput
+                  label="Placa do Veículo"
+                  placeholder="Ex: NXR-2026"
+                  value={courierPlate}
+                  onChangeText={setCourierPlate}
+                  autoCapitalize="characters"
+                  error={courierErrors.plate}
+                />
+              )}
+              <AppButton
+                title="Salvar Motoboy"
+                onPress={handleSaveStoreCourier}
+                loading={savingCourier}
+                size="sm"
+                style={{ marginTop: spacing.xs }}
+              />
+            </View>
+          )}
+
+          {storeCouriers.length === 0 ? (
+            <Text style={styles.emptyNoticeText}>
+              Nenhum motoboy próprio cadastrado ainda. Sua loja pode usar entregadores autônomos da rede ou cadastrar seus próprios entregadores aqui.
+            </Text>
+          ) : (
+            storeCouriers.map((c) => (
+              <View key={c.id} style={styles.courierRowItem}>
+                <View style={styles.courierRowIcon}>
+                  <Ionicons name="bicycle" size={18} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.courierRowName}>{c.name}</Text>
+                  <Text style={styles.courierRowDetails}>
+                    {c.vehicle} {c.plate ? `• Placa: ${c.plate}` : ""} • {c.phone}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => handleDeleteStoreCourier(c)}
+                  style={styles.deleteSmallBtn}
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.error} />
+                </Pressable>
+              </View>
+            ))
+          )}
+        </View>
 
         {/* ===== Formulário de prato ===== */}
         <Text style={styles.sectionTitle}>
@@ -508,25 +800,50 @@ export default function StoreDashboardScreen() {
           multiline
         />
 
-        {/* Galeria de fotos do prato */}
+        {/* Galeria e upload de fotos do prato */}
         <View style={styles.photoHeaderRow}>
           <Text style={styles.chipsLabel}>Foto do prato</Text>
-          <Pressable
-            style={styles.uploadBtn}
-            onPress={handlePickProductImage}
-            disabled={uploadingImage}
-            accessibilityRole="button"
-            accessibilityLabel="Escolher foto do aparelho"
-          >
-            {uploadingImage ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <>
-                <Ionicons name="cloud-upload-outline" size={16} color={colors.primary} />
-                <Text style={styles.uploadBtnText}>Upload da Galeria</Text>
-              </>
+          <View style={{ flexDirection: "row", gap: spacing.xs }}>
+            <Pressable
+              style={styles.uploadBtn}
+              onPress={handleCameraProductImage}
+              disabled={uploadingImage}
+              accessibilityRole="button"
+              accessibilityLabel="Tirar foto com a câmera"
+            >
+              <Ionicons name="camera-outline" size={16} color={colors.primary} />
+              <Text style={styles.uploadBtnText}>Câmera</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.uploadBtn}
+              onPress={handlePickProductImage}
+              disabled={uploadingImage}
+              accessibilityRole="button"
+              accessibilityLabel="Escolher foto da galeria"
+            >
+              {uploadingImage ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <>
+                  <Ionicons name="images-outline" size={16} color={colors.primary} />
+                  <Text style={styles.uploadBtnText}>Galeria</Text>
+                </>
+              )}
+            </Pressable>
+
+            {prodImage && (
+              <Pressable
+                style={[styles.uploadBtn, { borderColor: colors.gray300 }]}
+                onPress={() => setProdImage(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Restaurar foto sugerida"
+              >
+                <Ionicons name="refresh-outline" size={15} color={colors.textSecondary} />
+                <Text style={[styles.uploadBtnText, { color: colors.textSecondary }]}>Sugerida</Text>
+              </Pressable>
             )}
-          </Pressable>
+          </View>
         </View>
 
         <Text style={styles.photoHint}>
@@ -605,6 +922,20 @@ export default function StoreDashboardScreen() {
 
         {/* ===== Taxas de Entrega por Bairro (Santa Inês - MA) ===== */}
         <View style={styles.ratesSection}>
+          {store.deliveryMode === "independent_couriers" && (
+            <View style={styles.independentModeNotice}>
+              <Ionicons name="information-circle" size={22} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.independentModeTitle}>
+                  Modalidade: Rede Autônoma de Entregadores
+                </Text>
+                <Text style={styles.independentModeDesc}>
+                  Sua loja utiliza os entregadores autônomos da rede Food Rush. As taxas de entrega para os clientes de Santa Inês são calculadas automaticamente por bairro (a partir de R$ 6,00) e repassadas em 85% para o motoboy. A loja não pode alterar essas taxas manualmente. Para definir taxas próprias, altere a modalidade da loja para "Motoboy Próprio".
+                </Text>
+              </View>
+            </View>
+          )}
+
           <View style={styles.ratesHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.sectionTitle}>Taxas de Entrega por Bairro</Text>
@@ -612,21 +943,23 @@ export default function StoreDashboardScreen() {
                 Santa Inês - MA ({neighborhoods.length} bairros mapeados)
               </Text>
             </View>
-            <Pressable
-              style={styles.addBairroBtn}
-              onPress={() => setShowNewBairroForm(!showNewBairroForm)}
-              accessibilityRole="button"
-              accessibilityLabel={showNewBairroForm ? "Fechar cadastro de bairro" : "Adicionar novo bairro"}
-            >
-              <Ionicons
-                name={showNewBairroForm ? "close" : "add-circle-outline"}
-                size={18}
-                color={colors.primary}
-              />
-              <Text style={styles.addBairroBtnText}>
-                {showNewBairroForm ? "Fechar" : "Novo Bairro"}
-              </Text>
-            </Pressable>
+            {store.deliveryMode !== "independent_couriers" && (
+              <Pressable
+                style={styles.addBairroBtn}
+                onPress={() => setShowNewBairroForm(!showNewBairroForm)}
+                accessibilityRole="button"
+                accessibilityLabel={showNewBairroForm ? "Fechar cadastro de bairro" : "Adicionar novo bairro"}
+              >
+                <Ionicons
+                  name={showNewBairroForm ? "close" : "add-circle-outline"}
+                  size={18}
+                  color={colors.primary}
+                />
+                <Text style={styles.addBairroBtnText}>
+                  {showNewBairroForm ? "Fechar" : "Novo Bairro"}
+                </Text>
+              </Pressable>
+            )}
           </View>
 
           {showNewBairroForm && (
@@ -731,19 +1064,25 @@ export default function StoreDashboardScreen() {
                     ) : (
                       <View style={styles.rateDisplayRow}>
                         <Text style={styles.rateFeeText}>
-                          {currentFee > 0 ? formatCurrency(currentFee) : "Grátis"}
+                          {store.deliveryMode === "independent_couriers"
+                            ? "Automática"
+                            : currentFee > 0
+                            ? formatCurrency(currentFee)
+                            : "Grátis"}
                         </Text>
-                        <Pressable
-                          style={styles.editRateBtn}
-                          onPress={() => {
-                            setEditingBairroId(bairro.id);
-                            setEditingBairroRate(currentFee.toFixed(2).replace(".", ","));
-                          }}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Editar taxa do bairro ${bairro.name}`}
-                        >
-                          <Ionicons name="create-outline" size={18} color={colors.primary} />
-                        </Pressable>
+                        {store.deliveryMode !== "independent_couriers" && (
+                          <Pressable
+                            style={styles.editRateBtn}
+                            onPress={() => {
+                              setEditingBairroId(bairro.id);
+                              setEditingBairroRate(currentFee.toFixed(2).replace(".", ","));
+                            }}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Editar taxa do bairro ${bairro.name}`}
+                          >
+                            <Ionicons name="create-outline" size={18} color={colors.primary} />
+                          </Pressable>
+                        )}
                       </View>
                     )}
                   </View>
@@ -1112,5 +1451,138 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.md,
     fontFamily: typography.semiBold,
     color: colors.error,
+  },
+  autoFeeBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.primaryLight,
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  autoFeeBoxText: {
+    flex: 1,
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.text,
+    lineHeight: 18,
+  },
+  storeDeliveryTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+    backgroundColor: colors.primaryLight,
+    alignSelf: "flex-start",
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  storeDeliveryTagText: {
+    fontSize: fontSizes.xs - 1,
+    fontFamily: typography.semiBold,
+    color: colors.primary,
+  },
+  cardHeaderWithAction: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  cardSubtitle: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  addSmallBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+  },
+  addSmallBtnText: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.semiBold,
+    color: colors.white,
+  },
+  newCourierBox: {
+    backgroundColor: colors.gray100,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  subFormTitle: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.bold,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  emptyNoticeText: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+    fontStyle: "italic",
+    paddingVertical: spacing.xs,
+  },
+  courierRowItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.gray100,
+  },
+  courierRowIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primaryLight,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.sm,
+  },
+  courierRowName: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.semiBold,
+    color: colors.text,
+  },
+  courierRowDetails: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+  },
+  deleteSmallBtn: {
+    padding: spacing.xs,
+  },
+  independentModeNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+    backgroundColor: colors.primaryLight,
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  independentModeTitle: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.bold,
+    color: colors.primary,
+    marginBottom: 2,
+  },
+  independentModeDesc: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.text,
+    lineHeight: 18,
   },
 });

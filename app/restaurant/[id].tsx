@@ -126,6 +126,7 @@ export default function RestaurantDetailScreen() {
       clearCart();
     }
     addItem(product);
+    showMessage("Adicionado!", `"${product.name}" foi adicionado à sua sacola.`);
   };
   // O usuário logado é o dono desta loja?
   const isOwner = user?.store?.id === restaurant.id;
@@ -592,9 +593,11 @@ const styles = StyleSheet.create({
   },
   floatingCartBar: {
     position: "absolute",
-    bottom: 16,
+    bottom: 20,
     left: spacing.lg,
     right: spacing.lg,
+    zIndex: 9999,
+    elevation: 12,
   },
   cartBarButton: {
     backgroundColor: colors.primary,

@@ -18,9 +18,15 @@ export function BackButton({ onPress, color = colors.text, style }: BackButtonPr
   const handlePress = () => {
     if (onPress) {
       onPress();
-    } else if (router.canGoBack()) {
-      router.back();
-    } else {
+      return;
+    }
+    try {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/(tabs)");
+      }
+    } catch {
       router.replace("/(tabs)");
     }
   };

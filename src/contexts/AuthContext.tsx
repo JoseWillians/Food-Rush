@@ -38,11 +38,32 @@ const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 async function loadAccounts(): Promise<StoredAccount[]> {
-  const stored = await storageGet<StoredAccount[] | null>(STORAGE_KEYS.ACCOUNTS, null);
+  let stored = await storageGet<StoredAccount[] | null>(STORAGE_KEYS.ACCOUNTS, null);
+  try {
+    const remote = await api.getRemoteAccounts();
+    if (Array.isArray(remote) && remote.length > 0) {
+      const mergedMap = new Map<string, StoredAccount>();
+      for (const a of remote) {
+        if (a?.user?.email) mergedMap.set(normalizeEmail(a.user.email), a);
+      }
+      if (stored) {
+        for (const a of stored) {
+          if (a?.user?.email) mergedMap.set(normalizeEmail(a.user.email), a);
+        }
+      }
+      const merged = Array.from(mergedMap.values());
+      await storageSet(STORAGE_KEYS.ACCOUNTS, merged);
+      return merged;
+    }
+  } catch {
+    // Offline fallback
+  }
+
   if (stored) return stored;
   // Primeira vez que o app abre: cria a conta de demonstração
   const initial = [{ password: DEMO_PASSWORD, user: mockUser }];
   await storageSet(STORAGE_KEYS.ACCOUNTS, initial);
+  api.syncAccounts(initial);
   return initial;
 }
 
@@ -169,7 +190,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    await storageSet(STORAGE_KEYS.ACCOUNTS, [...accounts, { password, user: newUser }]);
+    const newAccounts = [...accounts, { password, user: newUser }];
+    await storageSet(STORAGE_KEYS.ACCOUNTS, newAccounts);
+    api.syncAccounts(newAccounts);
     setUser(newUser);
     await storageSet(STORAGE_KEYS.AUTH_USER, newUser);
     return { ok: true };
@@ -184,6 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     account.password = newPassword;
     await storageSet(STORAGE_KEYS.ACCOUNTS, accounts);
+    api.syncAccounts(accounts);
     return { ok: true };
   };
 
@@ -199,6 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (index > -1) {
       accounts[index] = { ...accounts[index], user: updated };
       await storageSet(STORAGE_KEYS.ACCOUNTS, accounts);
+      api.syncAccounts(accounts);
     }
   };
 
