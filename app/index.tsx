@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +21,7 @@ export default function SplashScreen() {
     // poderia decidir o caminho antes de saber se alguém está logado.
     if (isLoading) return;
 
+    const delay = Platform.OS === "web" ? 300 : 1800;
     const timer = setTimeout(async () => {
       const onboardingCompleted = await storageGet<boolean>(
         STORAGE_KEYS.ONBOARDING_COMPLETED,
@@ -34,7 +35,7 @@ export default function SplashScreen() {
       } else {
         router.replace("/auth/login");
       }
-    }, 1800);
+    }, delay);
 
     return () => clearTimeout(timer);
   }, [user, isLoading]);

@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { Platform } from "react-native";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -17,7 +18,10 @@ import { FavoritesProvider } from "@/src/contexts/FavoritesContext";
 import { OrderProvider } from "@/src/contexts/OrderContext";
 import { colors } from "@/src/theme/colors";
 
-SplashScreen.preventAutoHideAsync();
+// Apenas no mobile evita sumiço precoce da tela nativa de splash
+if (Platform.OS !== "web") {
+  SplashScreen.preventAutoHideAsync().catch(() => {});
+}
 
 /**
  * Layout raiz do app: carrega as fontes e envolve todas as telas com os
@@ -40,11 +44,15 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
+      if (Platform.OS !== "web") {
+        SplashScreen.hideAsync().catch(() => {});
+      }
     }
   }, [fontsLoaded, fontError]);
 
-  if (!fontsLoaded && !fontError) {
+  // No mobile esperamos o carregamento das fontes; na Web renderizamos direto com
+  // fallback de fontes padrão do sistema para nunca exibir tela preta/branca travada
+  if (!fontsLoaded && !fontError && Platform.OS !== "web") {
     return null;
   }
 
