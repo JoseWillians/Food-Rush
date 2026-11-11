@@ -15,9 +15,8 @@ import { borderRadius, spacing } from "@/src/theme/spacing";
 import { fontSizes, typography } from "@/src/theme/typography";
 import { useFavorites } from "@/src/contexts/FavoritesContext";
 import { RatingStars } from "@/src/components/ui/RatingStars";
-import { formatCurrency } from "@/src/utils/currency";
-import { AppButton } from "@/src/components/ui/AppButton";
 import { EmptyState } from "@/src/components/ui/EmptyState";
+import { FoodCard } from "@/src/components/food/FoodCard";
 
 type FavoritesTab = "restaurants" | "dishes";
 
@@ -133,33 +132,15 @@ export default function FavoritesScreen() {
             />
           ) : (
             favoriteProducts.map((product) => (
-              // O cartão e o coração são botões separados (um botão dentro do outro dá erro na web)
-              <View key={product.id} style={styles.dishCard}>
-                <Pressable
-                  style={styles.dishMain}
-                  onPress={() =>
-                    router.push({ pathname: "/restaurant/[id]", params: { id: product.restaurantId } })
-                  }
-                  accessibilityRole="button"
-                  accessibilityLabel={`Abrir a loja de ${product.name}`}
-                >
-                  <Image source={{ uri: product.image }} style={styles.dishImage} />
-                  <View style={styles.dishInfo}>
-                    <Text style={styles.dishName}>{product.name}</Text>
-                    <Text style={styles.dishCategory}>{product.category}</Text>
-                    <Text style={styles.dishPrice}>{formatCurrency(product.price)}</Text>
-                  </View>
-                </Pressable>
-                <Pressable
-                  style={styles.dishFavIcon}
-                  onPress={() => toggleFavoriteProduct(product)}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remover ${product.name} dos favoritos`}
-                >
-                  <Ionicons name="heart" size={22} color={colors.primary} />
-                </Pressable>
-              </View>
+              <FoodCard
+                key={product.id}
+                product={product}
+                isFavorite={true}
+                onToggleFavorite={toggleFavoriteProduct}
+                onPress={() =>
+                  router.push({ pathname: "/restaurant/[id]", params: { id: product.restaurantId } })
+                }
+              />
             ))
           )
         )}

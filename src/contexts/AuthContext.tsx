@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { User } from "@/src/types";
+import { CourierProfile, User } from "@/src/types";
 import { mockUser } from "@/src/mocks/user";
 import { STORAGE_KEYS, storageGet, storageRemove, storageSet } from "@/src/utils/storage";
 import { api } from "@/src/services/api";
@@ -107,6 +107,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       avatar: mockUser.avatar,
       role: userData.role || "customer",
       store: userData.store,
+      vehicleType: userData.vehicleType,
+      vehiclePlate: userData.vehiclePlate,
+      courierMode: userData.courierMode,
+      cityId: userData.cityId || "cid-santaines",
+      cityName: userData.cityName || "Santa Inês",
+      neighborhoodId: userData.neighborhoodId,
+      neighborhoodName: userData.neighborhoodName,
       addresses: userData.addresses || [],
       savedPaymentMethods: userData.savedPaymentMethods || [],
       notifications: userData.notifications || {
@@ -115,6 +122,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         whatsappUpdates: true,
       },
     };
+
+    // Entregador: cria o perfil inicial de motoboy
+    if (newUser.role === "courier") {
+      const courierProfile: CourierProfile = {
+        id: `c-${newUser.id}`,
+        userId: newUser.id,
+        name: `${newUser.name} ${newUser.lastName || ""}`.trim(),
+        phone: newUser.phone || "",
+        vehicle:
+          userData.vehicleType === "carro"
+            ? "Carro"
+            : userData.vehicleType === "bicicleta"
+            ? "Bicicleta"
+            : "Motocicleta",
+        vehicleType: userData.vehicleType || "moto",
+        plate: userData.vehiclePlate || "",
+        mode: userData.courierMode || "independent",
+        rating: 5.0,
+        isActive: true,
+        isOnline: true,
+        totalDeliveries: 0,
+        totalEarnings: 0,
+      };
+      newUser.courier = courierProfile;
+      await storageSet(STORAGE_KEYS.COURIER_PROFILE, courierProfile);
+    }
 
     // Empreendedor: cria a loja uma única vez, já com o id que fica salvo no usuário
     if (newUser.store) {
@@ -128,6 +161,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         phone: newUser.store.phone,
         ownerName: `${newUser.name} ${newUser.lastName || ""}`.trim(),
         ownerEmail: newUser.email,
+        cityId: newUser.store.cityId || "cid-santaines",
+        cityName: newUser.store.cityName || "Santa Inês",
+        neighborhoodId: newUser.store.neighborhoodId,
+        neighborhoodName: newUser.store.neighborhoodName,
+        deliveryMode: newUser.store.deliveryMode,
       });
     }
 

@@ -22,6 +22,7 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { RatingStars } from "@/src/components/ui/RatingStars";
 import { BackButton } from "@/src/components/ui/BackButton";
 import { AppButton } from "@/src/components/ui/AppButton";
+import { FoodCard } from "@/src/components/food/FoodCard";
 import { formatCurrency } from "@/src/utils/currency";
 import { api } from "@/src/services/api";
 import { confirmDialog, showMessage } from "@/src/utils/dialog";
@@ -144,18 +145,35 @@ export default function RestaurantDetailScreen() {
           />
           <View style={styles.topActions}>
             <BackButton style={styles.actionCircle} />
-            <Pressable
-              style={styles.actionCircle}
-              accessibilityRole="button"
-              accessibilityLabel={isFav ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-              onPress={() => toggleFavorite(restaurant)}
-            >
-              <Ionicons
-                name={isFav ? "heart" : "heart-outline"}
-                size={22}
-                color={isFav ? colors.primary : colors.text}
-              />
-            </Pressable>
+            <View style={styles.topRightActions}>
+              <Pressable
+                style={styles.actionCircle}
+                accessibilityRole="button"
+                accessibilityLabel={isFav ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                onPress={() => toggleFavorite(restaurant)}
+              >
+                <Ionicons
+                  name={isFav ? "heart" : "heart-outline"}
+                  size={22}
+                  color={isFav ? colors.primary : colors.text}
+                />
+              </Pressable>
+              <Pressable
+                style={[styles.actionCircle, styles.cartCircleBtn]}
+                accessibilityRole="button"
+                accessibilityLabel="Abrir carrinho de compras"
+                onPress={() => router.push("/cart")}
+              >
+                <Ionicons name="cart-outline" size={22} color={colors.text} />
+                {itemCount > 0 && (
+                  <View style={styles.headerCartBadge}>
+                    <Text style={styles.headerCartBadgeText}>
+                      {itemCount > 99 ? "99+" : itemCount}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+            </View>
           </View>
         </View>
 
@@ -252,59 +270,20 @@ export default function RestaurantDetailScreen() {
                   {isOwner && (
                     <AppButton
                       title="Adicionar pratos"
-                      onPress={() => router.push("/store")}
+                      onPress={() => router.push("/store" as any)}
                     />
                   )}
                 </View>
               ) : (
                 products.map((product) => (
-                  <View key={product.id} style={styles.productCard}>
-                    <View style={styles.productDetails}>
-                      <Text style={styles.productName}>{product.name}</Text>
-                      <Text style={styles.productDesc} numberOfLines={2}>
-                        {product.description}
-                      </Text>
-                      <View style={styles.priceRow}>
-                        <Text style={styles.productPrice}>
-                          {formatCurrency(product.price)}
-                        </Text>
-                        {/* Favoritar o prato (aparece na aba Favoritos > Pratos) */}
-                        <Pressable
-                          onPress={() => toggleFavoriteProduct(product)}
-                          hitSlop={10}
-                          accessibilityRole="button"
-                          accessibilityLabel={
-                            isFavoriteProduct(product.id)
-                              ? `Remover ${product.name} dos favoritos`
-                              : `Favoritar ${product.name}`
-                          }
-                        >
-                          <Ionicons
-                            name={isFavoriteProduct(product.id) ? "heart" : "heart-outline"}
-                            size={20}
-                            color={isFavoriteProduct(product.id) ? colors.primary : colors.gray400}
-                          />
-                        </Pressable>
-                      </View>
-                    </View>
-
-                    <View style={styles.productImageWrapper}>
-                      <Image
-                        source={{ uri: product.image }}
-                        style={styles.productImage}
-                      />
-                      <Pressable
-                        style={[styles.addButton, isClosed && styles.addButtonDisabled]}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Adicionar ${product.name} ao carrinho`}
-                        accessibilityState={{ disabled: isClosed }}
-                        onPress={() => handleAddProduct(product)}
-                        hitSlop={8}
-                      >
-                        <Ionicons name="add" size={20} color={colors.white} />
-                      </Pressable>
-                    </View>
-                  </View>
+                  <FoodCard
+                    key={product.id}
+                    product={product}
+                    onAdd={handleAddProduct}
+                    isFavorite={isFavoriteProduct(product.id)}
+                    onToggleFavorite={toggleFavoriteProduct}
+                    isClosed={isClosed}
+                  />
                 ))
               )}
             </View>
@@ -401,6 +380,33 @@ const styles = StyleSheet.create({
     right: spacing.lg,
     flexDirection: "row",
     justifyContent: "space-between",
+  },
+  topRightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  cartCircleBtn: {
+    position: "relative",
+  },
+  headerCartBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.full,
+    minWidth: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: colors.white,
+  },
+  headerCartBadgeText: {
+    color: colors.white,
+    fontSize: 10,
+    fontFamily: typography.bold,
   },
   actionCircle: {
     width: 40,

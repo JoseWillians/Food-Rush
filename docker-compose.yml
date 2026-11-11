@@ -34,6 +34,8 @@ services:
       PORT: 3000
       NODE_ENV: production
       DATABASE_URL: postgres://${DB_USER:-foodrush}:${DB_PASSWORD:-foodrush_secret_pass}@postgres:5432/${DB_NAME:-foodrush_db}
+    volumes:
+      - uploads_data:/app/public/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,6 +44,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  uploads_data:
     driver: local
 
 networks:

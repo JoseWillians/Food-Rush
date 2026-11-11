@@ -51,7 +51,7 @@ export default function TabLayout() {
             <Ionicons
               name={focused ? "home" : "home-outline"}
               size={24}
-              color={color}
+              color={typeof color === "string" ? color : (focused ? colors.primary : colors.textSecondary)}
             />
           ),
         }}
@@ -64,7 +64,7 @@ export default function TabLayout() {
             <Ionicons
               name={focused ? "receipt" : "receipt-outline"}
               size={24}
-              color={color}
+              color={typeof color === "string" ? color : (focused ? colors.primary : colors.textSecondary)}
             />
           ),
         }}
@@ -77,7 +77,7 @@ export default function TabLayout() {
             <Ionicons
               name={focused ? "heart" : "heart-outline"}
               size={24}
-              color={color}
+              color={typeof color === "string" ? color : (focused ? colors.primary : colors.textSecondary)}
             />
           ),
         }}
@@ -90,7 +90,7 @@ export default function TabLayout() {
             <Ionicons
               name={focused ? "person" : "person-outline"}
               size={24}
-              color={color}
+              color={typeof color === "string" ? color : (focused ? colors.primary : colors.textSecondary)}
             />
           ),
         }}

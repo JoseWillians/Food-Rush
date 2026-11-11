@@ -26,10 +26,13 @@ const STATUS_INFO: Record<
   { label: string; color: string; next?: OrderStatus; action?: string }
 > = {
   placed: { label: "Novo pedido", color: colors.primary, next: "preparing", action: "Aceitar pedido" },
-  preparing: { label: "Em preparo", color: colors.warning, next: "out_for_delivery", action: "Enviar para entrega" },
+  preparing: { label: "Em preparo", color: colors.warning, next: "ready", action: "Marcar como pronto" },
+  ready: { label: "Pronto para entrega", color: colors.success, next: "out_for_delivery", action: "Despachar pedido" },
   out_for_delivery: { label: "Saiu para entrega", color: colors.success },
+  on_the_way: { label: "Em rota de entrega", color: colors.success },
   arriving: { label: "Chegando", color: colors.success },
   delivered: { label: "Entregue", color: colors.textSecondary },
+  cancelled: { label: "Cancelado", color: colors.error },
 };
 
 type Filter = "open" | "done";

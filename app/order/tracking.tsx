@@ -29,9 +29,17 @@ const STATUS_TEXT: Record<OrderStatus, { title: string; desc: string }> = {
     title: "Seu pedido está sendo preparado",
     desc: "A loja aceitou o pedido e já está preparando tudo.",
   },
+  ready: {
+    title: "Pedido pronto para coleta",
+    desc: "Aguardando o entregador retirar na loja.",
+  },
   out_for_delivery: {
     title: "Seu pedido está a caminho!",
     desc: "O entregador já retirou o pedido. Fique atento ao interfone ou telefone.",
+  },
+  on_the_way: {
+    title: "Seu pedido está a caminho!",
+    desc: "O entregador já está em trânsito com seu pedido.",
   },
   arriving: {
     title: "O entregador está chegando!",
@@ -40,6 +48,10 @@ const STATUS_TEXT: Record<OrderStatus, { title: string; desc: string }> = {
   delivered: {
     title: "Pedido entregue",
     desc: "Bom apetite! Não esqueça de avaliar a loja.",
+  },
+  cancelled: {
+    title: "Pedido cancelado",
+    desc: "Este pedido foi cancelado.",
   },
 };
 

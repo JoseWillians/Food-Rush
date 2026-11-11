@@ -81,6 +81,27 @@ export default function ProfileScreen() {
           </View>
         </Pressable>
 
+        {/* Atalho exclusivo do Entregador */}
+        {user?.role === "courier" && (
+          <Pressable
+            style={styles.courierBanner}
+            onPress={() => router.push("/courier" as any)}
+            accessibilityRole="button"
+            accessibilityLabel="Abrir Painel do Entregador"
+          >
+            <View style={styles.courierBannerIcon}>
+              <Ionicons name="bicycle" size={24} color={colors.white} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.courierBannerTitle}>Painel do Entregador</Text>
+              <Text style={styles.courierBannerSub}>
+                Status: {user.courierProfile?.status === "online" || user.courierProfile?.isOnline ? "Online (Recebendo entregas)" : "Offline"}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </Pressable>
+        )}
+
         {/* Loja do empreendedor ou convite para cadastrar uma */}
         <PartnerBanner onBecomePartner={() => setOpenSheet("becomePartner")} />
 
@@ -233,5 +254,35 @@ const styles = StyleSheet.create({
     fontFamily: typography.regular,
     color: colors.textSecondary,
     marginTop: 1,
+  },
+  courierBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  courierBannerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  courierBannerTitle: {
+    fontSize: fontSizes.md,
+    fontFamily: typography.bold,
+    color: colors.text,
+  },
+  courierBannerSub: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });

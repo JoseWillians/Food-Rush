@@ -78,7 +78,7 @@ export function PartnerBanner({ onBecomePartner }: { onBecomePartner: () => void
 
       <Pressable
         style={styles.manageButton}
-        onPress={() => router.push("/store")}
+        onPress={() => router.push("/store" as any)}
         accessibilityRole="button"
       >
         <Ionicons name="restaurant-outline" size={16} color={colors.white} />

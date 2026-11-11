@@ -39,7 +39,7 @@ const QUICK_REPLIES = [
  */
 export default function OrderChatScreen() {
   const { activeOrder } = useOrders();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   const restaurantName = activeOrder?.restaurantName || "Burger House";
   const courierName = activeOrder?.courierName || "Policarpo de Sousa";

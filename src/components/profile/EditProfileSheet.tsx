@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@/src/theme/colors";
 import { spacing } from "@/src/theme/spacing";
@@ -8,9 +8,11 @@ import { BottomSheet } from "@/src/components/ui/BottomSheet";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppInput } from "@/src/components/ui/AppInput";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { api } from "@/src/services/api";
 import { showMessage } from "@/src/utils/dialog";
 import { formatPhone, isValidEmail, isValidPhone } from "@/src/utils/validation";
 import { sheetStyles } from "./profileStyles";
+import * as ImagePicker from "expo-image-picker";
 
 // Fotos de perfil que o usuário pode escolher
 export const PRESET_AVATARS = [
@@ -32,6 +34,7 @@ export function EditProfileSheet({ visible, onClose }: SheetProps) {
   const [phone, setPhone] = useState("");
   const [avatar, setAvatar] = useState(PRESET_AVATARS[0]);
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [uploading, setUploading] = useState(false);
 
   // Toda vez que a janela abre, preenche com os dados atuais do usuário
   useEffect(() => {
@@ -44,6 +47,45 @@ export function EditProfileSheet({ visible, onClose }: SheetProps) {
       setErrors({});
     }
   }, [visible, user]);
+
+  const handlePickAvatar = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        showMessage("Permissão necessária", "Permita acesso à galeria para enviar uma nova foto.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setUploading(true);
+        try {
+          if (asset.base64) {
+            const uploaded = await api.uploadImage({
+              base64: `data:image/jpeg;base64,${asset.base64}`,
+              fileName: `avatar-${Date.now()}.jpg`,
+              folder: "avatars",
+            });
+            setAvatar(uploaded.url);
+          } else if (asset.uri) {
+            setAvatar(asset.uri);
+          }
+        } finally {
+          setUploading(false);
+        }
+      }
+    } catch (err: any) {
+      setUploading(false);
+      showMessage("Erro no upload", err.message || "Tente novamente.");
+    }
+  };
 
   const handleSave = async () => {
     const found: FieldErrors = {};
@@ -66,8 +108,33 @@ export function EditProfileSheet({ visible, onClose }: SheetProps) {
 
   return (
     <BottomSheet visible={visible} title="Editar Meus Dados" onClose={onClose}>
-      <Text style={styles.label}>Escolha sua foto:</Text>
+      <Text style={styles.label}>Escolha sua foto ou envie uma nova:</Text>
       <View style={styles.avatarsRow}>
+        <Pressable
+          onPress={handlePickAvatar}
+          disabled={uploading}
+          style={[styles.avatarChoice, styles.uploadChoice]}
+          accessibilityRole="button"
+          accessibilityLabel="Enviar foto da galeria"
+        >
+          {uploading ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Ionicons name="camera-outline" size={24} color={colors.primary} />
+          )}
+        </Pressable>
+
+        {/* Se o avatar atual for personalizado e não estiver nos presets */}
+        {!PRESET_AVATARS.includes(avatar) && (
+          <Pressable
+            style={[styles.avatarChoice, styles.avatarChoiceSelected]}
+            accessibilityRole="button"
+            accessibilityLabel="Foto enviada por você"
+          >
+            <Image source={{ uri: avatar }} style={styles.avatarImg} />
+          </Pressable>
+        )}
+
         {PRESET_AVATARS.map((uri) => (
           <Pressable
             key={uri}
@@ -77,7 +144,7 @@ export function EditProfileSheet({ visible, onClose }: SheetProps) {
             accessibilityState={{ selected: avatar === uri }}
             accessibilityLabel="Escolher esta foto"
           >
-            <Image source={{ uri }} style={styles.avatarImg} />
+            <Image source={{ uri: uri }} style={styles.avatarImg} />
           </Pressable>
         ))}
       </View>
@@ -145,6 +212,14 @@ const styles = StyleSheet.create({
     padding: 2,
   },
   avatarChoiceSelected: {
+    borderColor: colors.primary,
+  },
+  uploadChoice: {
+    backgroundColor: colors.primaryLight,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderStyle: "dashed",
     borderColor: colors.primary,
   },
   avatarImg: {

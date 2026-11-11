@@ -18,7 +18,7 @@ import { fontSizes, typography } from "@/src/theme/typography";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppInput } from "@/src/components/ui/AppInput";
 import { DEMO_EMAIL, DEMO_PASSWORD, useAuth } from "@/src/contexts/AuthContext";
-import { PartnerStore, UserRole } from "@/src/types";
+import { CourierMode, PartnerStore, UserRole, VehicleType } from "@/src/types";
 import { showMessage } from "@/src/utils/dialog";
 import {
   MIN_PASSWORD_LENGTH,
@@ -27,6 +27,30 @@ import {
   isValidPhone,
   parsePrice,
 } from "@/src/utils/validation";
+
+const SANTA_INES_NEIGHBORHOODS = [
+  "Centro",
+  "Sabbak",
+  "Vila Militar",
+  "Parque Santa Cruz",
+  "Canecão",
+  "Aeroporto",
+  "Jardim Brasília",
+  "Nova Santa Inês",
+  "Vila Adelaide Cabral",
+  "Bairro Novo",
+  "Palmeira",
+  "Santo Antônio",
+  "São Benedito",
+  "Coheb",
+  "Mutirão",
+  "Sol Nascente",
+  "Residencial Eco Ville",
+  "Conjunto Juçara",
+  "Vila Marcony",
+  "Laranjeiras",
+  "Vila Conceição",
+];
 
 type AuthTab = "login" | "register";
 
@@ -74,6 +98,16 @@ export default function AuthScreen() {
   const [storeDeliveryFee, setStoreDeliveryFee] = useState("5.99");
   const [storeAddress, setStoreAddress] = useState("");
   const [storePhone, setStorePhone] = useState("");
+  const [storeCity] = useState("Santa Inês");
+  const [storeNeighborhood, setStoreNeighborhood] = useState("Centro");
+  const [showNeighborhoodDropdown, setShowNeighborhoodDropdown] = useState(false);
+  const [neighborhoodSearch, setNeighborhoodSearch] = useState("");
+  const [storeDeliveryMode, setStoreDeliveryMode] = useState<"own_courier" | "independent_couriers">("own_courier");
+
+  // Courier (Entregador / Motoboy) form state
+  const [courierVehicle, setCourierVehicle] = useState<VehicleType>("moto");
+  const [courierPlate, setCourierPlate] = useState("");
+  const [courierMode, setCourierMode] = useState<CourierMode>("independent");
 
   // ---------- LOGIN ----------
   const handleLogin = async () => {
@@ -170,6 +204,12 @@ export default function AuthScreen() {
       if (storePhone.trim() && !isValidPhone(storePhone))
         errors.storePhone = "Digite o DDD e o número completo.";
     }
+
+    if (accountType === "courier") {
+      if ((courierVehicle === "moto" || courierVehicle === "carro") && !courierPlate.trim()) {
+        errors.courierPlate = "Informe a placa do veículo (ex: NXR-2026).";
+      }
+    }
     return errors;
   };
 
@@ -188,13 +228,17 @@ export default function AuthScreen() {
               category: storeCategory,
               deliveryTime: storeDeliveryTime.trim(),
               deliveryFee: parsePrice(storeDeliveryFee) ?? 0,
-              address: storeAddress.trim() || "Endereço cadastrado",
+              address: storeAddress.trim() || `${storeNeighborhood}, Santa Inês - MA`,
               phone: storePhone.trim() || regPhone,
               isOpen: true,
+              cityId: "cid-santaines",
+              cityName: storeCity,
+              neighborhoodName: storeNeighborhood,
+              deliveryMode: storeDeliveryMode,
             }
           : undefined;
 
-      // O signUp cria a conta e, se for empreendedor, cadastra a loja (uma vez só)
+      // O signUp cria a conta e configura loja ou entregador
       const result = await signUp(
         {
           name: regName.trim(),
@@ -203,6 +247,12 @@ export default function AuthScreen() {
           phone: regPhone,
           role: accountType,
           store: createdStore,
+          vehicleType: accountType === "courier" ? courierVehicle : undefined,
+          vehiclePlate: accountType === "courier" ? courierPlate.toUpperCase().trim() : undefined,
+          courierMode: accountType === "courier" ? courierMode : undefined,
+          cityId: "cid-santaines",
+          cityName: "Santa Inês",
+          neighborhoodName: accountType === "partner" ? storeNeighborhood : undefined,
         },
         regPassword
       );
@@ -211,7 +261,13 @@ export default function AuthScreen() {
         return;
       }
 
-      router.replace("/(tabs)");
+      if (accountType === "partner") {
+        router.replace("/store" as any);
+      } else if (accountType === "courier") {
+        router.replace("/courier" as any);
+      } else {
+        router.replace("/(tabs)");
+      }
     } catch {
       setRegErrors({ general: "Erro ao cadastrar. Tente novamente." });
     } finally {
@@ -428,7 +484,7 @@ export default function AuthScreen() {
                     >
                       <Ionicons
                         name="person"
-                        size={18}
+                        size={16}
                         color={accountType === "customer" ? colors.white : colors.primary}
                       />
                     </View>
@@ -441,7 +497,7 @@ export default function AuthScreen() {
                       >
                         Cliente
                       </Text>
-                      <Text style={styles.roleButtonSub}>Quero pedir comida</Text>
+                      <Text style={styles.roleButtonSub}>Pedir comida</Text>
                     </View>
                   </Pressable>
 
@@ -452,7 +508,7 @@ export default function AuthScreen() {
                     ]}
                     onPress={() => setAccountType("partner")}
                     accessibilityRole="button"
-                    accessibilityLabel="Conta Empreendedor: quero cadastrar minha loja"
+                    accessibilityLabel="Conta Empreendedor: cadastrar loja"
                   >
                     <View
                       style={[
@@ -462,7 +518,7 @@ export default function AuthScreen() {
                     >
                       <Ionicons
                         name="storefront"
-                        size={18}
+                        size={16}
                         color={accountType === "partner" ? colors.white : colors.primary}
                       />
                     </View>
@@ -473,9 +529,43 @@ export default function AuthScreen() {
                           accountType === "partner" && styles.roleButtonTitleActive,
                         ]}
                       >
-                        Empreendedor
+                        Loja
                       </Text>
-                      <Text style={styles.roleButtonSub}>Cadastrar minha loja</Text>
+                      <Text style={styles.roleButtonSub}>Vender pratos</Text>
+                    </View>
+                  </Pressable>
+
+                  <Pressable
+                    style={[
+                      styles.roleButton,
+                      accountType === "courier" && styles.roleButtonActive,
+                    ]}
+                    onPress={() => setAccountType("courier")}
+                    accessibilityRole="button"
+                    accessibilityLabel="Conta Entregador: fazer entregas"
+                  >
+                    <View
+                      style={[
+                        styles.roleIconCircle,
+                        accountType === "courier" && styles.roleIconCircleActive,
+                      ]}
+                    >
+                      <Ionicons
+                        name="bicycle"
+                        size={16}
+                        color={accountType === "courier" ? colors.white : colors.primary}
+                      />
+                    </View>
+                    <View style={styles.roleTextContainer}>
+                      <Text
+                        style={[
+                          styles.roleButtonTitle,
+                          accountType === "courier" && styles.roleButtonTitleActive,
+                        ]}
+                      >
+                        Entregador
+                      </Text>
+                      <Text style={styles.roleButtonSub}>Fazer entregas</Text>
                     </View>
                   </Pressable>
                 </View>
@@ -594,6 +684,136 @@ export default function AuthScreen() {
                     })}
                   </ScrollView>
 
+                  {/* Cidade da Loja (Santa Inês - MA) */}
+                  <Text style={styles.chipsSectionLabel}>Cidade de Operação</Text>
+                  <View style={styles.citySelectedCard}>
+                    <Ionicons name="location" size={18} color={colors.primary} />
+                    <Text style={styles.citySelectedText}>Santa Inês - MA</Text>
+                    <View style={styles.cityBadge}>
+                      <Text style={styles.cityBadgeText}>Disponível</Text>
+                    </View>
+                  </View>
+
+                  {/* Bairro da Loja em Santa Inês (Lista retrátil que expande ao clicar na seta) */}
+                  <Text style={styles.chipsSectionLabel}>Bairro da Loja em Santa Inês</Text>
+                  <Pressable
+                    style={styles.dropdownHeader}
+                    onPress={() => setShowNeighborhoodDropdown((prev) => !prev)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Escolher bairro de Santa Inês"
+                  >
+                    <View style={styles.dropdownHeaderLeft}>
+                      <Ionicons name="location-outline" size={18} color={colors.primary} />
+                      <Text style={styles.dropdownHeaderText}>
+                        Bairro: <Text style={styles.dropdownHeaderHighlight}>{storeNeighborhood}</Text>
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={showNeighborhoodDropdown ? "chevron-up" : "chevron-down"}
+                      size={20}
+                      color={colors.textSecondary}
+                    />
+                  </Pressable>
+
+                  {showNeighborhoodDropdown && (
+                    <View style={styles.dropdownBody}>
+                      <AppInput
+                        placeholder="Buscar bairro em Santa Inês..."
+                        value={neighborhoodSearch}
+                        onChangeText={setNeighborhoodSearch}
+                        leftIcon={<Ionicons name="search-outline" size={16} color={colors.gray400} />}
+                        containerStyle={{ marginBottom: spacing.xs }}
+                      />
+                      <ScrollView
+                        nestedScrollEnabled
+                        style={styles.dropdownList}
+                        showsVerticalScrollIndicator={true}
+                      >
+                        {SANTA_INES_NEIGHBORHOODS.filter((b) =>
+                          b.toLowerCase().includes(neighborhoodSearch.toLowerCase().trim())
+                        ).map((b) => {
+                          const isSelected = storeNeighborhood === b;
+                          return (
+                            <Pressable
+                              key={b}
+                              style={[
+                                styles.dropdownItem,
+                                isSelected && styles.dropdownItemSelected,
+                              ]}
+                              onPress={() => {
+                                setStoreNeighborhood(b);
+                                setShowNeighborhoodDropdown(false);
+                                setNeighborhoodSearch("");
+                              }}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Selecionar bairro ${b}`}
+                            >
+                              <Text
+                                style={[
+                                  styles.dropdownItemText,
+                                  isSelected && styles.dropdownItemTextSelected,
+                                ]}
+                              >
+                                {b}
+                              </Text>
+                              {isSelected && (
+                                <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+                              )}
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  )}
+
+                  {/* Modalidade de Entrega da Loja */}
+                  <Text style={styles.chipsSectionLabel}>Modalidade de Entrega</Text>
+                  <View style={styles.deliveryModeRow}>
+                    <Pressable
+                      style={[
+                        styles.deliveryModeChip,
+                        storeDeliveryMode === "own_courier" && styles.deliveryModeChipActive,
+                      ]}
+                      onPress={() => setStoreDeliveryMode("own_courier")}
+                    >
+                      <Ionicons
+                        name="bicycle"
+                        size={16}
+                        color={storeDeliveryMode === "own_courier" ? colors.primary : colors.gray400}
+                      />
+                      <Text
+                        style={[
+                          styles.deliveryModeText,
+                          storeDeliveryMode === "own_courier" && styles.deliveryModeTextActive,
+                        ]}
+                      >
+                        Motoboy Próprio
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={[
+                        styles.deliveryModeChip,
+                        storeDeliveryMode === "independent_couriers" && styles.deliveryModeChipActive,
+                      ]}
+                      onPress={() => setStoreDeliveryMode("independent_couriers")}
+                    >
+                      <Ionicons
+                        name="people"
+                        size={16}
+                        color={storeDeliveryMode === "independent_couriers" ? colors.primary : colors.gray400}
+                      />
+                      <Text
+                        style={[
+                          styles.deliveryModeText,
+                          storeDeliveryMode === "independent_couriers" && styles.deliveryModeTextActive,
+                        ]}
+                      >
+                        Rede Autônoma
+                      </Text>
+                    </Pressable>
+                  </View>
+
                   <View style={styles.nameRow}>
                     <View style={styles.halfInput}>
                       <AppInput
@@ -637,6 +857,115 @@ export default function AuthScreen() {
                 </View>
               )}
 
+              {/* Campos Exclusivos de Entregador (Motoboy) */}
+              {accountType === "courier" && (
+                <View style={styles.storeCardContainer}>
+                  <View style={styles.storeHeaderRow}>
+                    <Ionicons name="bicycle" size={20} color={colors.primary} />
+                    <Text style={styles.storeHeaderTitle}>Dados do Entregador / Motoboy</Text>
+                  </View>
+
+                  {/* Cidade de Atuação */}
+                  <Text style={styles.chipsSectionLabel}>Cidade de Atuação</Text>
+                  <View style={styles.citySelectedCard}>
+                    <Ionicons name="location" size={18} color={colors.primary} />
+                    <Text style={styles.citySelectedText}>Santa Inês - MA</Text>
+                    <View style={styles.cityBadge}>
+                      <Text style={styles.cityBadgeText}>Ativa</Text>
+                    </View>
+                  </View>
+
+                  {/* Tipo de Veículo */}
+                  <Text style={styles.chipsSectionLabel}>Veículo de Entrega</Text>
+                  <View style={styles.deliveryModeRow}>
+                    {[
+                      { type: "moto" as VehicleType, label: "Moto", icon: "speedometer-outline" as const },
+                      { type: "bicicleta" as VehicleType, label: "Bicicleta", icon: "bicycle-outline" as const },
+                      { type: "carro" as VehicleType, label: "Carro", icon: "car-outline" as const },
+                    ].map((v) => {
+                      const isSelected = courierVehicle === v.type;
+                      return (
+                        <Pressable
+                          key={v.type}
+                          style={[styles.deliveryModeChip, isSelected && styles.deliveryModeChipActive]}
+                          onPress={() => setCourierVehicle(v.type)}
+                        >
+                          <Ionicons
+                            name={v.icon}
+                            size={16}
+                            color={isSelected ? colors.primary : colors.gray400}
+                          />
+                          <Text style={[styles.deliveryModeText, isSelected && styles.deliveryModeTextActive]}>
+                            {v.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {(courierVehicle === "moto" || courierVehicle === "carro") && (
+                    <AppInput
+                      label="Placa do Veículo"
+                      placeholder="Ex: NXR-2026 ou ABC-1234"
+                      value={courierPlate}
+                      onChangeText={(t) => setCourierPlate(t.toUpperCase())}
+                      autoCapitalize="characters"
+                      maxLength={8}
+                      error={regErrors.courierPlate}
+                      leftIcon={<Ionicons name="car-outline" size={20} color={colors.gray400} />}
+                    />
+                  )}
+
+                  {/* Modalidade de Atuação */}
+                  <Text style={styles.chipsSectionLabel}>Modalidade de Atuação</Text>
+                  <View style={styles.deliveryModeRow}>
+                    <Pressable
+                      style={[
+                        styles.deliveryModeChip,
+                        courierMode === "independent" && styles.deliveryModeChipActive,
+                      ]}
+                      onPress={() => setCourierMode("independent")}
+                    >
+                      <Ionicons
+                        name="flash-outline"
+                        size={16}
+                        color={courierMode === "independent" ? colors.primary : colors.gray400}
+                      />
+                      <Text
+                        style={[
+                          styles.deliveryModeText,
+                          courierMode === "independent" && styles.deliveryModeTextActive,
+                        ]}
+                      >
+                        Autônomo (App)
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={[
+                        styles.deliveryModeChip,
+                        courierMode === "store_partner" && styles.deliveryModeChipActive,
+                      ]}
+                      onPress={() => setCourierMode("store_partner")}
+                    >
+                      <Ionicons
+                        name="business-outline"
+                        size={16}
+                        color={courierMode === "store_partner" ? colors.primary : colors.gray400}
+                      />
+                      <Text
+                        style={[
+                          styles.deliveryModeText,
+                          courierMode === "store_partner" && styles.deliveryModeTextActive,
+                        ]}
+                      >
+                        Fixo de Loja
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+
               {Object.keys(regErrors).length > 0 ? (
                 <Text style={styles.errorBanner}>
                   {regErrors.general || "Confira os campos destacados em vermelho."}
@@ -644,7 +973,13 @@ export default function AuthScreen() {
               ) : null}
 
               <AppButton
-                title={accountType === "partner" ? "Cadastrar Minha Loja" : "Criar Conta"}
+                title={
+                  accountType === "partner"
+                    ? "Cadastrar Minha Loja"
+                    : accountType === "courier"
+                    ? "Cadastrar como Entregador"
+                    : "Criar Conta"
+                }
                 onPress={handleRegister}
                 loading={loading}
                 size="lg"
@@ -937,6 +1272,125 @@ const styles = StyleSheet.create({
   },
   halfInput: {
     width: "48%",
+  },
+  citySelectedCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.gray100,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+    gap: spacing.xs,
+  },
+  citySelectedText: {
+    flex: 1,
+    fontSize: fontSizes.sm,
+    fontFamily: typography.bold,
+    color: colors.text,
+  },
+  cityBadge: {
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+  },
+  cityBadgeText: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.bold,
+    color: colors.primary,
+  },
+  deliveryModeRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  deliveryModeChip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.gray50,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+  },
+  deliveryModeChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  deliveryModeText: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.medium,
+    color: colors.textSecondary,
+  },
+  deliveryModeTextActive: {
+    color: colors.primary,
+    fontFamily: typography.bold,
+  },
+  dropdownHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.gray100,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    marginBottom: spacing.xs,
+  },
+  dropdownHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  dropdownHeaderText: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.medium,
+    color: colors.textSecondary,
+  },
+  dropdownHeaderHighlight: {
+    fontFamily: typography.bold,
+    color: colors.text,
+  },
+  dropdownBody: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  dropdownList: {
+    maxHeight: 180,
+  },
+  dropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.gray100,
+  },
+  dropdownItemSelected: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: borderRadius.sm,
+  },
+  dropdownItemText: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.regular,
+    color: colors.text,
+  },
+  dropdownItemTextSelected: {
+    fontFamily: typography.bold,
+    color: colors.primary,
   },
 });
 

@@ -72,7 +72,7 @@ const minDeliveryTime = (r: Restaurant) => parseInt(r.deliveryTime, 10) || 999;
 export default function HomeScreen() {
   const { user, updateUser } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const { items, total, itemCount } = useCart();
+  const { total, itemCount } = useCart();
 
   const [restaurants, setRestaurants] = useState<Restaurant[]>(mockRestaurants);
   const [loading, setLoading] = useState(true);
@@ -210,21 +210,38 @@ export default function HomeScreen() {
       >
         {/* Cabeçalho */}
         <View style={styles.header}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.greeting}>Olá, {user?.name || "Policarpo"}!</Text>
             <Text style={styles.subGreeting}>O que vamos pedir hoje?</Text>
           </View>
-          <Pressable
-            style={styles.notificationButton}
-            accessibilityRole="button"
-            accessibilityLabel="Notificações"
-            onPress={() =>
-              showMessage("Notificações", "Você não possui novas notificações no momento.")
-            }
-          >
-            <Ionicons name="notifications-outline" size={24} color={colors.text} />
-            <View style={styles.notificationBadge} />
-          </Pressable>
+
+          <View style={styles.headerRightActions}>
+            <Pressable
+              style={styles.cartHeaderButton}
+              accessibilityRole="button"
+              accessibilityLabel="Meu carrinho"
+              onPress={() => router.push("/cart")}
+            >
+              <Ionicons name="cart-outline" size={24} color={colors.text} />
+              {itemCount > 0 && (
+                <View style={styles.cartBadgeSmall}>
+                  <Text style={styles.cartBadgeTextSmall}>{itemCount}</Text>
+                </View>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={styles.notificationButton}
+              accessibilityRole="button"
+              accessibilityLabel="Notificações"
+              onPress={() =>
+                showMessage("Notificações", "Você não possui novas notificações no momento.")
+              }
+            >
+              <Ionicons name="notifications-outline" size={24} color={colors.text} />
+              <View style={styles.notificationBadge} />
+            </Pressable>
+          </View>
         </View>
 
         {/* Barra de Endereço & Localização GPS */}
@@ -556,6 +573,39 @@ const styles = StyleSheet.create({
     fontFamily: typography.regular,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  headerRightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  cartHeaderButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.gray100,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  cartBadgeSmall: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: colors.white,
+  },
+  cartBadgeTextSmall: {
+    color: colors.white,
+    fontFamily: typography.bold,
+    fontSize: 10,
   },
   notificationButton: {
     width: 44,

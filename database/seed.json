@@ -1,4 +1,76 @@
 {
+  "estados": [
+    { "id": "MA", "name": "Maranhão", "uf": "MA" }
+  ],
+  "cidades": [
+    { "id": "cid-santaines", "estadoId": "MA", "name": "Santa Inês", "ibgeCode": "2109908", "isActive": true }
+  ],
+  "bairros": [
+    { "id": "b-centro", "cidadeId": "cid-santaines", "name": "Centro", "zone": "central" },
+    { "id": "b-sabbak", "cidadeId": "cid-santaines", "name": "Sabbak", "zone": "urbana" },
+    { "id": "b-vila-militar", "cidadeId": "cid-santaines", "name": "Vila Militar", "zone": "urbana" },
+    { "id": "b-pq-santa-cruz", "cidadeId": "cid-santaines", "name": "Parque Santa Cruz", "zone": "urbana" },
+    { "id": "b-canecao", "cidadeId": "cid-santaines", "name": "Canecão", "zone": "urbana" },
+    { "id": "b-aeroporto", "cidadeId": "cid-santaines", "name": "Aeroporto", "zone": "urbana" },
+    { "id": "b-jardim-brasilia", "cidadeId": "cid-santaines", "name": "Jardim Brasília", "zone": "urbana" },
+    { "id": "b-nova-santa-ines", "cidadeId": "cid-santaines", "name": "Nova Santa Inês", "zone": "urbana" },
+    { "id": "b-vila-adelaide-cabral", "cidadeId": "cid-santaines", "name": "Vila Adelaide Cabral", "zone": "urbana" },
+    { "id": "b-bairro-novo", "cidadeId": "cid-santaines", "name": "Bairro Novo", "zone": "urbana" },
+    { "id": "b-palmeira", "cidadeId": "cid-santaines", "name": "Palmeira", "zone": "urbana" },
+    { "id": "b-santo-antonio", "cidadeId": "cid-santaines", "name": "Santo Antônio", "zone": "urbana" },
+    { "id": "b-sao-benedito", "cidadeId": "cid-santaines", "name": "São Benedito", "zone": "urbana" },
+    { "id": "b-coheb", "cidadeId": "cid-santaines", "name": "Coheb", "zone": "urbana" },
+    { "id": "b-mutirao", "cidadeId": "cid-santaines", "name": "Mutirão", "zone": "urbana" },
+    { "id": "b-sol-nascente", "cidadeId": "cid-santaines", "name": "Sol Nascente", "zone": "urbana" },
+    { "id": "b-eco-ville", "cidadeId": "cid-santaines", "name": "Residencial Eco Ville", "zone": "urbana" },
+    { "id": "b-conjunto-jucara", "cidadeId": "cid-santaines", "name": "Conjunto Juçara", "zone": "urbana" },
+    { "id": "b-vila-marcony", "cidadeId": "cid-santaines", "name": "Vila Marcony", "zone": "urbana" },
+    { "id": "b-laranjeiras", "cidadeId": "cid-santaines", "name": "Laranjeiras", "zone": "urbana" },
+    { "id": "b-vila-conceicao", "cidadeId": "cid-santaines", "name": "Vila Conceição", "zone": "urbana" },
+    { "id": "b-angelim", "cidadeId": "cid-santaines", "name": "Angelim", "zone": "urbana" },
+    { "id": "b-barreiros", "cidadeId": "cid-santaines", "name": "Barreiros", "zone": "urbana" },
+    { "id": "b-canaa", "cidadeId": "cid-santaines", "name": "Canaã", "zone": "urbana" },
+    { "id": "b-jardim-abreu", "cidadeId": "cid-santaines", "name": "Jardim Abreu", "zone": "urbana" },
+    { "id": "b-vila-edmundo-rios", "cidadeId": "cid-santaines", "name": "Vila Edmundo Rios", "zone": "urbana" },
+    { "id": "b-vila-olimpica", "cidadeId": "cid-santaines", "name": "Vila Olímpica", "zone": "urbana" },
+    { "id": "b-pq-buritis", "cidadeId": "cid-santaines", "name": "Parque dos Buritis", "zone": "urbana" },
+    { "id": "b-morada-nova", "cidadeId": "cid-santaines", "name": "Morada Nova", "zone": "urbana" }
+  ],
+  "motoboyTaxasConfig": {
+    "cityId": "cid-santaines",
+    "baseFee": 6.0,
+    "extraPerZone": 2.0,
+    "courierPayoutPct": 85.0,
+    "platformFeePct": 15.0
+  },
+  "lojaTaxasBairro": [
+    { "id": "tb-1-centro", "restaurantId": "1", "bairroId": "b-centro", "deliveryFee": 4.0, "estimatedTime": "20-30 min" },
+    { "id": "tb-1-sabbak", "restaurantId": "1", "bairroId": "b-sabbak", "deliveryFee": 5.0, "estimatedTime": "25-35 min" },
+    { "id": "tb-1-vila-militar", "restaurantId": "1", "bairroId": "b-vila-militar", "deliveryFee": 5.0, "estimatedTime": "25-35 min" },
+    { "id": "tb-1-pq-santa-cruz", "restaurantId": "1", "bairroId": "b-pq-santa-cruz", "deliveryFee": 6.0, "estimatedTime": "30-40 min" },
+    { "id": "tb-1-canecao", "restaurantId": "1", "bairroId": "b-canecao", "deliveryFee": 6.0, "estimatedTime": "30-40 min" },
+    { "id": "tb-1-aeroporto", "restaurantId": "1", "bairroId": "b-aeroporto", "deliveryFee": 7.0, "estimatedTime": "35-45 min" },
+    { "id": "tb-1-jardim-brasilia", "restaurantId": "1", "bairroId": "b-jardim-brasilia", "deliveryFee": 7.0, "estimatedTime": "35-45 min" },
+    { "id": "tb-1-nova-santa-ines", "restaurantId": "1", "bairroId": "b-nova-santa-ines", "deliveryFee": 8.0, "estimatedTime": "40-50 min" },
+    { "id": "tb-1-palmeira", "restaurantId": "1", "bairroId": "b-palmeira", "deliveryFee": 7.5, "estimatedTime": "35-45 min" },
+    { "id": "tb-1-coheb", "restaurantId": "1", "bairroId": "b-coheb", "deliveryFee": 8.0, "estimatedTime": "40-50 min" }
+  ],
+  "couriers": [
+    {
+      "id": "c-policarpo",
+      "userId": "u-demo-courier",
+      "name": "Policarpo de Sousa",
+      "phone": "(98) 98765-4321",
+      "vehicle": "Honda CG 160 Fan",
+      "plate": "NXR-2026",
+      "mode": "independent",
+      "rating": 4.9,
+      "isActive": true,
+      "isOnline": true,
+      "totalDeliveries": 48,
+      "totalEarnings": 384.0
+    }
+  ],
   "categories": [
     { "id": "1", "name": "Lanches", "icon": "fast-food-outline" },
     { "id": "2", "name": "Pizza", "icon": "pizza-outline" },

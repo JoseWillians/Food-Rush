@@ -66,7 +66,7 @@ export function BecomePartnerSheet({ visible, onClose }: SheetProps) {
       onClose();
       showMessage("Parabéns!", `Sua loja "${store.name}" foi cadastrada!`);
       // Leva direto ao painel da loja para cadastrar os pratos
-      router.push("/store");
+      router.push("/store" as any);
     } finally {
       setSaving(false);
     }

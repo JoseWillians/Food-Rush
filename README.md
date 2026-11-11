@@ -3,8 +3,8 @@
 <div align="center">
 
 ![Versão](https://img.shields.io/badge/vers%C3%A3o-1.1.0-red?style=for-the-badge)
-![Expo](https://img.shields.io/badge/Expo_SDK-57.0-black?style=for-the-badge&logo=expo)
-![React Native](https://img.shields.io/badge/React_Native-0.86.3-61DAFB?style=for-the-badge&logo=react)
+![Expo](https://img.shields.io/badge/Expo_SDK-58.0-black?style=for-the-badge&logo=expo)
+![React Native](https://img.shields.io/badge/React_Native-0.88.1-61DAFB?style=for-the-badge&logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue?style=for-the-badge&logo=typescript)
 ![Express](https://img.shields.io/badge/Express-5-000000?style=for-the-badge&logo=express)
 
@@ -155,7 +155,7 @@ Roda os testes de `tests/` com o test runner do próprio Node: subtotal, total, 
 
 | Camada | Tecnologia |
 |---|---|
-| **Mobile** | React Native 0.86 com Expo SDK 57 |
+| **Mobile** | React Native 0.88 com Expo SDK 58 |
 | **Navegação** | Expo Router (rotas por arquivos) |
 | **Linguagem** | TypeScript (modo estrito) |
 | **Estado global** | React Context API |

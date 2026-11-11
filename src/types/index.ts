@@ -10,6 +10,11 @@ export type Restaurant = {
   deliveryFee: number;
   favorite?: boolean;
   isOpen?: boolean; // false = loja fechada (não aceita pedidos)
+  cityId?: string;
+  cityName?: string;
+  neighborhoodId?: string;
+  neighborhoodName?: string;
+  deliveryMode?: "own_courier" | "independent_couriers" | "both";
 };
 
 export type Product = {
@@ -36,9 +41,12 @@ export type Review = {
 export type OrderStatus =
   | "placed"
   | "preparing"
+  | "ready"
   | "out_for_delivery"
+  | "on_the_way"
   | "arriving"
-  | "delivered";
+  | "delivered"
+  | "cancelled";
 
 export type CartItem = {
   id: string;
@@ -62,12 +70,18 @@ export type Order = {
   status: OrderStatus;
   deliveryAddress: string;
   paymentMethod: PaymentMethod;
+  courierId?: string;
   courierName?: string;
   courierRating?: number;
   estimatedTime?: string;
   reviewed?: boolean; // true depois que o cliente avalia o pedido
   customerId?: string; // quem fez o pedido (usado no painel do empreendedor)
   customerName?: string;
+  bairroId?: string;
+  bairroName?: string;
+  deliveryMode?: "own_courier" | "independent_courier";
+  courierFee?: number;
+  storeEarning?: number;
 };
 
 export type UserAddress = {
@@ -94,7 +108,66 @@ export type NotificationPreferences = {
   whatsappUpdates: boolean;
 };
 
-export type UserRole = "customer" | "partner";
+export type UserRole = "customer" | "partner" | "courier" | "admin";
+
+export type CourierMode = "independent" | "store_partner";
+export type VehicleType = "moto" | "bicicleta" | "carro";
+
+export type City = {
+  id: string;
+  estadoId: string;
+  name: string;
+  ibgeCode?: string;
+  isActive: boolean;
+};
+
+export type Neighborhood = {
+  id: string;
+  cidadeId: string;
+  name: string;
+  zone?: string;
+};
+
+export type StoreDeliveryRate = {
+  id: string;
+  restaurantId: string;
+  bairroId: string;
+  neighborhoodId?: string;
+  bairroName?: string;
+  deliveryFee: number;
+  rate?: number;
+  estimatedTime?: string;
+  isActive?: boolean;
+};
+
+export type CourierRateConfig = {
+  cityId: string;
+  baseFee: number;
+  extraPerZone: number;
+  courierPayoutPct: number;
+  platformFeePct: number;
+};
+
+export type CourierProfile = {
+  id: string;
+  userId: string;
+  name: string;
+  phone: string;
+  vehicle: string;
+  vehicleType?: VehicleType;
+  plate?: string;
+  mode: CourierMode;
+  status?: "online" | "offline" | "busy";
+  storeId?: string;
+  storeName?: string;
+  rating: number;
+  isActive: boolean;
+  isOnline: boolean;
+  totalDeliveries: number;
+  completedDeliveries?: number;
+  totalEarnings: number;
+  todayEarnings?: number;
+};
 
 export type PartnerStore = {
   id: string;
@@ -106,6 +179,11 @@ export type PartnerStore = {
   address?: string;
   phone?: string;
   isOpen?: boolean;
+  cityId?: string;
+  cityName?: string;
+  neighborhoodId?: string;
+  neighborhoodName?: string;
+  deliveryMode?: "own_courier" | "independent_couriers" | "both";
 };
 
 export type User = {
@@ -118,6 +196,15 @@ export type User = {
   address?: string;
   role?: UserRole;
   store?: PartnerStore;
+  courier?: CourierProfile;
+  courierProfile?: CourierProfile;
+  vehicleType?: VehicleType;
+  vehiclePlate?: string;
+  courierMode?: CourierMode;
+  cityId?: string;
+  cityName?: string;
+  neighborhoodId?: string;
+  neighborhoodName?: string;
   addresses?: UserAddress[];
   savedPaymentMethods?: SavedPaymentMethod[];
   notifications?: NotificationPreferences;
@@ -135,6 +222,11 @@ export type PartnerRegistration = {
   image?: string;
   ownerName?: string;
   ownerEmail?: string;
+  cityId?: string;
+  cityName?: string;
+  neighborhoodId?: string;
+  neighborhoodName?: string;
+  deliveryMode?: string;
 };
 
 // Dados de um prato novo enviados pelo empreendedor

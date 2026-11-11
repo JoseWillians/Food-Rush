@@ -1,11 +1,13 @@
 const express = require("express");
 const path = require("path");
 
+const fs = require("fs");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATABASE_URL = process.env.DATABASE_URL;
 
-app.use(express.json());
+// Suporte a payloads JSON maiores para envio de fotos em base64
+app.use(express.json({ limit: "15mb" }));
 
 // Middleware de CORS para permitir requisições do app mobile (Expo Go, emulador e web)
 app.use((req, res, next) => {
@@ -38,12 +40,21 @@ if (DATABASE_URL) {
         console.log("[FOOD RUSH DB] Conectado ao PostgreSQL com sucesso:", res.rows[0].now);
       }
     });
-  } catch (e) {
+  } catch {
     console.log("[FOOD RUSH DB] Módulo 'pg' não carregado. Operando com armazenamento em memória.");
   }
 }
 
-// Servir arquivos estáticos se a pasta public existir
+// Servir arquivos estáticos (incluindo diretório de uploads persistido)
+const uploadsDir = path.join(__dirname, "public", "uploads");
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+} catch (err) {
+  console.warn("[FOOD RUSH] Aviso ao criar pasta de uploads:", err.message);
+}
+app.use("/uploads", express.static(uploadsDir));
 app.use(express.static(path.join(__dirname, "public")));
 
 // Dados iniciais em memória. Vêm de database/seed.json, o mesmo arquivo que o app
@@ -51,12 +62,48 @@ app.use(express.static(path.join(__dirname, "public")));
 const seed = require("./database/seed.json");
 
 const categories = seed.categories;
+const estados = seed.estados || [{ id: "MA", name: "Maranhão", uf: "MA" }];
+let cidades = seed.cidades || [{ id: "cid-santaines", estadoId: "MA", name: "Santa Inês", isActive: true }];
+let bairros = [...(seed.bairros || [])];
+let lojaTaxasBairro = [...(seed.lojaTaxasBairro || [])];
+let motoboyTaxasConfig = seed.motoboyTaxasConfig || {
+  cityId: "cid-santaines",
+  baseFee: 6.0,
+  extraPerZone: 2.0,
+  courierPayoutPct: 85.0,
+  platformFeePct: 15.0,
+};
+let couriers = [...(seed.couriers || [])];
 
-let restaurants = seed.restaurants.map((r) => ({ ...r, isOpen: true }));
+let restaurants = seed.restaurants.map((r) => ({
+  ...r,
+  isOpen: true,
+  cityId: r.cityId || "cid-santaines",
+  cityName: r.cityName || "Santa Inês",
+  deliveryMode: r.deliveryMode || "own_courier",
+}));
 
 let products = [...seed.products];
-
 let reviews = [...seed.reviews];
+
+// Middleware de isolamento estrito de lojas (RBAC)
+function verifyStoreOwnership(req, res, next) {
+  const userRole = req.headers["x-user-role"] || req.body.requesterRole;
+  const requesterStoreId = req.headers["x-store-id"] || req.body.requesterStoreId;
+  const targetStoreId = req.params.id || req.body.restaurantId;
+
+  if (
+    userRole === "partner" &&
+    requesterStoreId &&
+    targetStoreId &&
+    requesterStoreId !== targetStoreId
+  ) {
+    return res.status(403).json({
+      error: "Acesso negado: você só pode gerenciar e configurar a sua própria loja.",
+    });
+  }
+  next();
+}
 
 let inMemoryOrders = [
   {
@@ -106,6 +153,260 @@ app.get("/", (req, res) => {
 // Endpoints REST
 app.get("/api/categories", (req, res) => {
   res.json(categories);
+});
+
+// ====================================================================
+// UPLOAD DE IMAGENS (PERFIL, ALIMENTOS E RESTAURANTES COM PERSISTÊNCIA DOCKER)
+// ====================================================================
+app.post("/api/upload", (req, res) => {
+  try {
+    const { image, folder = "general" } = req.body;
+    if (!image || typeof image !== "string") {
+      return res.status(400).json({ error: "Campo 'image' em formato data-URL ou base64 é obrigatório." });
+    }
+
+    let mimeType = "image/jpeg";
+    let base64Data = image;
+    const matches = image.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+    if (matches) {
+      mimeType = matches[1];
+      base64Data = matches[2];
+    }
+
+    const allowedMimes = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+    if (!allowedMimes.includes(mimeType.toLowerCase())) {
+      return res.status(400).json({ error: "Formato de imagem não suportado. Utilize JPEG, PNG ou WEBP." });
+    }
+
+    const buffer = Buffer.from(base64Data, "base64");
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: "A imagem excede o tamanho máximo permitido de 5MB." });
+    }
+
+    const ext = mimeType.split("/")[1].replace("jpeg", "jpg");
+    const filename = `${folder}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    const filePath = path.join(uploadsDir, filename);
+
+    fs.writeFileSync(filePath, buffer);
+    const publicUrl = `/uploads/${filename}`;
+    console.log(`[FOOD RUSH UPLOAD] Imagem salva com sucesso: ${publicUrl} (${(buffer.length / 1024).toFixed(1)} KB)`);
+
+    return res.status(201).json({
+      success: true,
+      url: publicUrl,
+      filename,
+      size: buffer.length,
+    });
+  } catch (err) {
+    console.error("[FOOD RUSH UPLOAD ERROR]", err);
+    return res.status(500).json({ error: "Erro interno ao processar o upload da imagem." });
+  }
+});
+
+// ====================================================================
+// HIERARQUIA GEOGRÁFICA (ESTADOS, CIDADES E BAIRROS DE SANTA INÊS - MA)
+// ====================================================================
+app.get("/api/geo/states", (req, res) => {
+  res.json(estados);
+});
+
+app.get("/api/geo/cities", (req, res) => {
+  res.json(cidades);
+});
+
+app.get("/api/geo/cities/:id/neighborhoods", (req, res) => {
+  const list = bairros.filter((b) => b.cidadeId === req.params.id);
+  res.json(list);
+});
+
+app.post("/api/geo/cities/:id/neighborhoods", (req, res) => {
+  const { name, zone } = req.body;
+  if (!name || !String(name).trim()) {
+    return res.status(400).json({ error: "Nome do bairro é obrigatório." });
+  }
+  const cleanName = String(name).trim();
+  const existing = bairros.find(
+    (b) => b.cidadeId === req.params.id && b.name.toLowerCase() === cleanName.toLowerCase()
+  );
+  if (existing) {
+    return res.status(409).json({ error: "Este bairro já está cadastrado nesta cidade.", bairro: existing });
+  }
+
+  const newBairro = {
+    id: `b-${Date.now()}`,
+    cidadeId: req.params.id,
+    name: cleanName,
+    zone: zone || "urbana",
+  };
+  bairros.push(newBairro);
+  console.log(`[FOOD RUSH GEO] Novo bairro cadastrado em Santa Inês: ${newBairro.name}`);
+  res.status(201).json(newBairro);
+});
+
+// ====================================================================
+// TAXAS DE ENTREGA DA LOJA POR BAIRRO
+// ====================================================================
+app.get("/api/restaurants/:id/delivery-rates", (req, res) => {
+  const list = lojaTaxasBairro.filter((t) => t.restaurantId === req.params.id);
+  res.json(list);
+});
+
+app.post("/api/restaurants/:id/delivery-rates", verifyStoreOwnership, (req, res) => {
+  const { bairroId, deliveryFee, estimatedTime } = req.body;
+  if (!bairroId) {
+    return res.status(400).json({ error: "bairroId é obrigatório." });
+  }
+  const feeNum = Number(deliveryFee);
+  if (isNaN(feeNum) || feeNum < 0) {
+    return res.status(400).json({ error: "A taxa de entrega deve ser um número zero ou maior." });
+  }
+
+  const index = lojaTaxasBairro.findIndex(
+    (t) => t.restaurantId === req.params.id && t.bairroId === bairroId
+  );
+  const rateData = {
+    id: index >= 0 ? lojaTaxasBairro[index].id : `tb-${req.params.id}-${Date.now()}`,
+    restaurantId: req.params.id,
+    bairroId,
+    deliveryFee: feeNum,
+    estimatedTime: estimatedTime || "30-45 min",
+    isActive: true,
+  };
+
+  if (index >= 0) {
+    lojaTaxasBairro[index] = rateData;
+  } else {
+    lojaTaxasBairro.push(rateData);
+  }
+  res.status(201).json(rateData);
+});
+
+app.delete("/api/restaurants/:id/delivery-rates/:rateId", verifyStoreOwnership, (req, res) => {
+  lojaTaxasBairro = lojaTaxasBairro.filter(
+    (t) => !(t.restaurantId === req.params.id && t.id === req.params.rateId)
+  );
+  res.status(204).end();
+});
+
+// ====================================================================
+// MOTOR DE CÁLCULO DE TAXAS (MOTOBOYS AUTÔNOMOS E LOJAS)
+// ====================================================================
+app.get("/api/delivery/courier-config/:cityId", (req, res) => {
+  res.json(motoboyTaxasConfig);
+});
+
+app.post("/api/delivery/calculate-fee", (req, res) => {
+  const { restaurantId, bairroId, mode } = req.body;
+
+  // 1. Caso seja entrega por motoboy próprio da loja
+  if (mode === "own_courier" || !mode) {
+    const customRate = lojaTaxasBairro.find(
+      (t) => t.restaurantId === restaurantId && t.bairroId === bairroId
+    );
+    if (customRate) {
+      return res.json({
+        deliveryFee: customRate.deliveryFee,
+        estimatedTime: customRate.estimatedTime,
+        source: "store_fixed",
+        courierFee: 0,
+      });
+    }
+  }
+
+  // 2. Cálculo para motoboys autônomos
+  const bairro = bairros.find((b) => b.id === bairroId);
+  let fee = motoboyTaxasConfig.baseFee || 6.0;
+  if (bairro && (bairro.zone === "rural" || bairro.zone === "periferica")) {
+    fee += motoboyTaxasConfig.extraPerZone || 2.0;
+  }
+
+  const courierPayout = Math.round(fee * (motoboyTaxasConfig.courierPayoutPct / 100) * 100) / 100;
+  const platformFee = Math.round((fee - courierPayout) * 100) / 100;
+
+  return res.json({
+    deliveryFee: fee,
+    estimatedTime: "25-40 min",
+    source: "independent_courier",
+    courierFee: courierPayout,
+    platformFee,
+  });
+});
+
+// ====================================================================
+// ENTREGADORES / MOTOBOYS (PERFIL, STATUS, ENTREGAS E GANHOS)
+// ====================================================================
+app.get("/api/couriers", (req, res) => {
+  res.json(couriers);
+});
+
+app.get("/api/couriers/:id", (req, res) => {
+  const courier = couriers.find((c) => c.id === req.params.id || c.userId === req.params.id);
+  if (!courier) return res.status(404).json({ error: "Entregador não encontrado." });
+  res.json(courier);
+});
+
+app.patch("/api/couriers/:id/status", (req, res) => {
+  let courier = couriers.find((c) => c.id === req.params.id || c.userId === req.params.id);
+  if (!courier) {
+    courier = {
+      id: req.params.id,
+      userId: req.params.id,
+      name: req.body.name || "Entregador",
+      phone: req.body.phone || "",
+      vehicle: req.body.vehicle || "Moto",
+      vehicleType: req.body.vehicleType || "moto",
+      mode: req.body.mode || "independent",
+      rating: 5.0,
+      isActive: true,
+      isOnline: Boolean(req.body.isOnline),
+      totalDeliveries: 0,
+      completedDeliveries: 0,
+      totalEarnings: 0,
+      todayEarnings: 0,
+    };
+    couriers.push(courier);
+  } else {
+    if (req.body.isOnline !== undefined) {
+      courier.isOnline = Boolean(req.body.isOnline);
+    }
+  }
+  res.json(courier);
+});
+
+app.get("/api/couriers/:id/available-orders", (req, res) => {
+  const available = inMemoryOrders.filter(
+    (o) =>
+      o.status === "preparing" ||
+      o.status === "ready_for_pickup" ||
+      (o.status === "placed" && !o.courierId)
+  );
+  res.json(available);
+});
+
+app.post("/api/orders/:id/accept-delivery", (req, res) => {
+  const { courierId, courierName } = req.body;
+  const order = inMemoryOrders.find((o) => o.id === req.params.id);
+  if (!order) return res.status(404).json({ error: "Pedido não encontrado." });
+
+  order.courierId = courierId;
+  order.courierName = courierName || "Motoboy Food Rush";
+  order.status = "out_for_delivery";
+  res.json(order);
+});
+
+app.patch("/api/orders/:id/complete-delivery", (req, res) => {
+  const order = inMemoryOrders.find((o) => o.id === req.params.id);
+  if (!order) return res.status(404).json({ error: "Pedido não encontrado." });
+
+  order.status = "delivered";
+  if (order.courierId) {
+    const courier = couriers.find((c) => c.id === order.courierId);
+    if (courier) {
+      courier.totalDeliveries += 1;
+      courier.totalEarnings += Number(order.courierFee || order.deliveryFee || 5.0);
+    }
+  }
+  res.json(order);
 });
 
 app.get("/api/restaurants", (req, res) => {
@@ -174,6 +475,11 @@ app.post("/api/partners/register", (req, res) => {
     address: address || "Endereço cadastrado",
     phone: phone || "",
     ownerEmail: ownerEmail || "",
+    cityId: req.body.cityId || "cid-santaines",
+    cityName: req.body.cityName || "Santa Inês",
+    neighborhoodId: req.body.neighborhoodId || "b-centro",
+    neighborhoodName: req.body.neighborhoodName || "Centro",
+    deliveryMode: req.body.deliveryMode || "own_courier",
     createdAt: new Date().toISOString(),
   };
 
@@ -186,7 +492,7 @@ app.post("/api/partners/register", (req, res) => {
 });
 
 // Empreendedor adicionando produto ao cardápio de sua loja
-app.post("/api/restaurants/:id/products", (req, res) => {
+app.post("/api/restaurants/:id/products", verifyStoreOwnership, (req, res) => {
   const restaurantId = req.params.id;
   const restaurant = restaurants.find((r) => r.id === restaurantId);
   if (!restaurant) {
@@ -220,7 +526,7 @@ app.post("/api/restaurants/:id/products", (req, res) => {
 });
 
 // Empreendedor editando os dados da loja
-app.put("/api/restaurants/:id", (req, res) => {
+app.put("/api/restaurants/:id", verifyStoreOwnership, (req, res) => {
   const restaurant = restaurants.find((r) => r.id === req.params.id);
   if (!restaurant) {
     return res.status(404).json({ error: "Restaurante não encontrado" });
@@ -243,7 +549,7 @@ app.put("/api/restaurants/:id", (req, res) => {
 });
 
 // Empreendedor excluindo a loja (e os pratos dela)
-app.delete("/api/restaurants/:id", (req, res) => {
+app.delete("/api/restaurants/:id", verifyStoreOwnership, (req, res) => {
   const exists = restaurants.some((r) => r.id === req.params.id);
   if (!exists) {
     return res.status(404).json({ error: "Restaurante não encontrado" });
@@ -287,7 +593,7 @@ app.delete("/api/products/:id", (req, res) => {
 });
 
 // Empreendedor abrindo ou fechando a loja
-app.patch("/api/restaurants/:id/status", (req, res) => {
+app.patch("/api/restaurants/:id/status", verifyStoreOwnership, (req, res) => {
   const restaurant = restaurants.find((r) => r.id === req.params.id);
   if (!restaurant) {
     return res.status(404).json({ error: "Restaurante não encontrado" });

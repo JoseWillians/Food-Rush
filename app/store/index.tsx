@@ -19,13 +19,15 @@ import { Header } from "@/src/components/ui/Header";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppInput } from "@/src/components/ui/AppInput";
 import { EmptyState } from "@/src/components/ui/EmptyState";
+import { FoodCard } from "@/src/components/food/FoodCard";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { api } from "@/src/services/api";
-import { Product } from "@/src/types";
+import { Neighborhood, Product, StoreDeliveryRate } from "@/src/types";
 import { formatCurrency } from "@/src/utils/currency";
 import { confirmDialog, showMessage } from "@/src/utils/dialog";
 import { parsePrice } from "@/src/utils/validation";
 import { FOOD_IMAGES, suggestFoodImage } from "@/src/constants/foodImages";
+import * as ImagePicker from "expo-image-picker";
 
 
 type FieldErrors = Record<string, string>;
@@ -42,6 +44,17 @@ export default function StoreDashboardScreen() {
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [pendingOrders, setPendingOrders] = useState(0);
 
+  // ----- Bairros e Taxas de Entrega da Cidade (Santa Inês - MA) -----
+  const [neighborhoods, setNeighborhoods] = useState<Neighborhood[]>([]);
+  const [storeRates, setStoreRates] = useState<StoreDeliveryRate[]>([]);
+  const [searchBairro, setSearchBairro] = useState("");
+  const [editingBairroId, setEditingBairroId] = useState<string | null>(null);
+  const [editingBairroRate, setEditingBairroRate] = useState("");
+  const [showNewBairroForm, setShowNewBairroForm] = useState(false);
+  const [newBairroName, setNewBairroName] = useState("");
+  const [newBairroZone, setNewBairroZone] = useState<"central" | "periferica" | "rural">("central");
+  const [savingBairro, setSavingBairro] = useState(false);
+
   // ----- Formulário de prato (serve para adicionar e para editar) -----
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [prodName, setProdName] = useState("");
@@ -49,8 +62,9 @@ export default function StoreDashboardScreen() {
   const [prodDesc, setProdDesc] = useState("");
   const [prodCat, setProdCat] = useState("Destaques");
   const [prodErrors, setProdErrors] = useState<FieldErrors>({});
-  // Foto escolhida na galeria. null = usar a sugestão automática pelo nome do prato
+  // Foto escolhida na galeria/upload. null = usar a sugestão automática pelo nome do prato
   const [prodImage, setProdImage] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [savingProduct, setSavingProduct] = useState(false);
 
   // ----- Formulário de dados da loja -----
@@ -61,15 +75,21 @@ export default function StoreDashboardScreen() {
   const [storeFee, setStoreFee] = useState("");
   const [storeErrors, setStoreErrors] = useState<FieldErrors>({});
 
+  const cityId = (store as any)?.cityId || "cidade-santa-ines";
+
   const loadData = useCallback(async () => {
     if (!store) return;
     setLoadingProducts(true);
     try {
-      const [prods, orders] = await Promise.all([
+      const [prods, orders, neighs, rates] = await Promise.all([
         api.getProducts(store.id),
         api.getStoreOrders(store.id),
+        api.getNeighborhoods(cityId),
+        api.getStoreDeliveryRates(store.id),
       ]);
       setProducts(prods);
+      setNeighborhoods(neighs);
+      setStoreRates(rates);
       // Pedidos que ainda precisam de ação da loja
       setPendingOrders(
         orders.filter((o) => o.status === "placed" || o.status === "preparing").length
@@ -77,7 +97,7 @@ export default function StoreDashboardScreen() {
     } finally {
       setLoadingProducts(false);
     }
-  }, [store?.id]);
+  }, [store?.id, cityId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -243,6 +263,89 @@ export default function StoreDashboardScreen() {
     await loadData();
   };
 
+  // ---------- Upload de Foto de Prato / Produto ----------
+  const handlePickProductImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        showMessage("Permissão necessária", "Permita o acesso à galeria para enviar fotos dos pratos.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setUploadingImage(true);
+        try {
+          if (asset.base64) {
+            const res = await api.uploadImage({
+              base64: `data:image/jpeg;base64,${asset.base64}`,
+              fileName: `product-${Date.now()}.jpg`,
+              folder: "products",
+            });
+            setProdImage(res.url);
+            showMessage("Upload concluído", "Foto do prato enviada com sucesso!");
+          } else if (asset.uri) {
+            setProdImage(asset.uri);
+          }
+        } finally {
+          setUploadingImage(false);
+        }
+      }
+    } catch (err: any) {
+      setUploadingImage(false);
+      showMessage("Erro no upload", err?.message || "Não foi possível carregar a imagem.");
+    }
+  };
+
+  // ---------- Taxas de Entrega por Bairro (Santa Inês - MA) ----------
+  const handleSaveBairroRate = async (bairroId: string) => {
+    const rate = parsePrice(editingBairroRate);
+    if (rate === null || rate < 0) {
+      showMessage("Valor inválido", "Informe um valor de taxa válido (ex: 7,50 ou 0 para grátis).");
+      return;
+    }
+    try {
+      await api.saveStoreDeliveryRate(store.id, bairroId, rate, 35);
+      showMessage("Taxa salva", "A taxa de entrega para este bairro foi atualizada!");
+      setEditingBairroId(null);
+      setEditingBairroRate("");
+      const updatedRates = await api.getStoreDeliveryRates(store.id);
+      setStoreRates(updatedRates);
+    } catch (err: any) {
+      showMessage("Erro ao salvar", err?.message || "Não foi possível salvar a taxa.");
+    }
+  };
+
+  const handleAddNeighborhood = async () => {
+    if (!newBairroName.trim()) {
+      showMessage("Campo obrigatório", "Digite o nome do novo bairro.");
+      return;
+    }
+    setSavingBairro(true);
+    try {
+      const created = await api.addNeighborhood(cityId, {
+        name: newBairroName.trim(),
+        zone: newBairroZone,
+      });
+      showMessage("Bairro adicionado", `O bairro "${created.name}" foi cadastrado com sucesso em Santa Inês!`);
+      setNewBairroName("");
+      setShowNewBairroForm(false);
+      const updatedNeighs = await api.getNeighborhoods(cityId);
+      setNeighborhoods(updatedNeighs);
+    } catch (err: any) {
+      showMessage("Erro ao adicionar", err?.message || "Não foi possível adicionar o bairro.");
+    } finally {
+      setSavingBairro(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <Header title="Minha Loja" />
@@ -349,7 +452,7 @@ export default function StoreDashboardScreen() {
         {/* ===== Atalho para os pedidos ===== */}
         <Pressable
           style={styles.ordersShortcut}
-          onPress={() => router.push("/store/orders")}
+          onPress={() => router.push("/store/orders" as any)}
           accessibilityRole="button"
         >
           <Ionicons name="receipt-outline" size={22} color={colors.primary} />
@@ -406,11 +509,30 @@ export default function StoreDashboardScreen() {
         />
 
         {/* Galeria de fotos do prato */}
-        <Text style={styles.chipsLabel}>Foto do prato</Text>
+        <View style={styles.photoHeaderRow}>
+          <Text style={styles.chipsLabel}>Foto do prato</Text>
+          <Pressable
+            style={styles.uploadBtn}
+            onPress={handlePickProductImage}
+            disabled={uploadingImage}
+            accessibilityRole="button"
+            accessibilityLabel="Escolher foto do aparelho"
+          >
+            {uploadingImage ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Ionicons name="cloud-upload-outline" size={16} color={colors.primary} />
+                <Text style={styles.uploadBtnText}>Upload da Galeria</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+
         <Text style={styles.photoHint}>
           {prodImage
             ? `Escolhida por você: ${selectedImageLabel}.`
-            : `Sugerida pelo nome do prato: ${selectedImageLabel}. Toque em outra para trocar.`}
+            : `Sugerida pelo nome do prato: ${selectedImageLabel}. Toque em outra para trocar ou use o botão de upload.`}
         </Text>
         {/* Prévia grande da foto que vai para o cardápio */}
         <Image source={{ uri: selectedImage }} style={styles.photoPreview} />
@@ -471,35 +593,164 @@ export default function StoreDashboardScreen() {
           </Text>
         ) : (
           products.map((product) => (
-            <View key={product.id} style={styles.productRow}>
-              <Image source={{ uri: product.image }} style={styles.productImage} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.productName} numberOfLines={1}>
-                  {product.name}
-                </Text>
-                <Text style={styles.productMeta}>
-                  {formatCurrency(product.price)} · {product.category}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => startEditProduct(product)}
-                style={styles.iconButton}
-                accessibilityRole="button"
-                accessibilityLabel={`Editar ${product.name}`}
-              >
-                <Ionicons name="create-outline" size={20} color={colors.primary} />
-              </Pressable>
-              <Pressable
-                onPress={() => handleDeleteProduct(product)}
-                style={styles.iconButton}
-                accessibilityRole="button"
-                accessibilityLabel={`Excluir ${product.name}`}
-              >
-                <Ionicons name="trash-outline" size={20} color={colors.error} />
-              </Pressable>
-            </View>
+            <FoodCard
+              key={product.id}
+              product={product}
+              isOwner={true}
+              onEdit={startEditProduct}
+              onDelete={handleDeleteProduct}
+            />
           ))
         )}
+
+        {/* ===== Taxas de Entrega por Bairro (Santa Inês - MA) ===== */}
+        <View style={styles.ratesSection}>
+          <View style={styles.ratesHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sectionTitle}>Taxas de Entrega por Bairro</Text>
+              <Text style={styles.ratesSubtitle}>
+                Santa Inês - MA ({neighborhoods.length} bairros mapeados)
+              </Text>
+            </View>
+            <Pressable
+              style={styles.addBairroBtn}
+              onPress={() => setShowNewBairroForm(!showNewBairroForm)}
+              accessibilityRole="button"
+              accessibilityLabel={showNewBairroForm ? "Fechar cadastro de bairro" : "Adicionar novo bairro"}
+            >
+              <Ionicons
+                name={showNewBairroForm ? "close" : "add-circle-outline"}
+                size={18}
+                color={colors.primary}
+              />
+              <Text style={styles.addBairroBtnText}>
+                {showNewBairroForm ? "Fechar" : "Novo Bairro"}
+              </Text>
+            </Pressable>
+          </View>
+
+          {showNewBairroForm && (
+            <View style={styles.newBairroCard}>
+              <Text style={styles.cardTitle}>Cadastrar Bairro em Santa Inês</Text>
+              <AppInput
+                label="Nome do Bairro"
+                placeholder="Ex: Novo Tempo"
+                value={newBairroName}
+                onChangeText={setNewBairroName}
+              />
+              <Text style={styles.chipsLabel}>Zona Urbana</Text>
+              <View style={styles.chipsRow}>
+                {(["central", "periferica", "rural"] as const).map((z) => {
+                  const sel = newBairroZone === z;
+                  const label =
+                    z === "central" ? "Central" : z === "periferica" ? "Periférica" : "Rural";
+                  return (
+                    <Pressable
+                      key={z}
+                      style={[styles.chip, sel && styles.chipSelected]}
+                      onPress={() => setNewBairroZone(z)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: sel }}
+                    >
+                      <Text style={[styles.chipText, sel && styles.chipTextSelected]}>
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <AppButton
+                title="Salvar Bairro"
+                onPress={handleAddNeighborhood}
+                loading={savingBairro}
+              />
+            </View>
+          )}
+
+          {/* Campo de Busca Rápida de Bairro */}
+          <AppInput
+            placeholder="Buscar bairro em Santa Inês..."
+            value={searchBairro}
+            onChangeText={setSearchBairro}
+            leftIcon={<Ionicons name="search-outline" size={18} color={colors.gray400} />}
+          />
+
+          {/* Lista de Bairros */}
+          <View style={styles.bairrosListContainer}>
+            {neighborhoods
+              .filter((b) =>
+                b.name.toLowerCase().includes(searchBairro.toLowerCase().trim())
+              )
+              .map((bairro) => {
+                const specificRate = storeRates.find(
+                  (r) => r.neighborhoodId === bairro.id || r.bairroId === bairro.id
+                );
+                const currentFee = specificRate
+                  ? (specificRate.rate ?? specificRate.deliveryFee)
+                  : (store.deliveryFee ?? 0);
+                const isEditing = editingBairroId === bairro.id;
+
+                return (
+                  <View key={bairro.id} style={styles.bairroRow}>
+                    <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                      <Text style={styles.bairroName}>{bairro.name}</Text>
+                      <Text style={styles.bairroZone}>
+                        Zona {bairro.zone === "central" ? "Central" : bairro.zone === "periferica" ? "Periférica" : "Rural"}
+                        {specificRate ? " · Taxa própria" : " · Taxa padrão"}
+                      </Text>
+                    </View>
+
+                    {isEditing ? (
+                      <View style={styles.rateEditRow}>
+                        <AppInput
+                          placeholder="Taxa R$"
+                          value={editingBairroRate}
+                          onChangeText={setEditingBairroRate}
+                          keyboardType="decimal-pad"
+                        />
+                        <Pressable
+                          style={styles.saveRateBtn}
+                          onPress={() => handleSaveBairroRate(bairro.id)}
+                          accessibilityRole="button"
+                          accessibilityLabel="Salvar taxa"
+                        >
+                          <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+                        </Pressable>
+                        <Pressable
+                          style={styles.cancelRateBtn}
+                          onPress={() => {
+                            setEditingBairroId(null);
+                            setEditingBairroRate("");
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancelar edição"
+                        >
+                          <Ionicons name="close-circle" size={28} color={colors.gray400} />
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <View style={styles.rateDisplayRow}>
+                        <Text style={styles.rateFeeText}>
+                          {currentFee > 0 ? formatCurrency(currentFee) : "Grátis"}
+                        </Text>
+                        <Pressable
+                          style={styles.editRateBtn}
+                          onPress={() => {
+                            setEditingBairroId(bairro.id);
+                            setEditingBairroRate(currentFee.toFixed(2).replace(".", ","));
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Editar taxa do bairro ${bairro.name}`}
+                        >
+                          <Ionicons name="create-outline" size={18} color={colors.primary} />
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+          </View>
+        </View>
 
         {/* ===== Excluir loja ===== */}
         <Pressable
@@ -733,6 +984,121 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.sm,
     fontFamily: typography.regular,
     color: colors.textSecondary,
+  },
+  photoHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.xs,
+  },
+  uploadBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primaryLight,
+  },
+  uploadBtnText: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.semiBold,
+    color: colors.primary,
+  },
+  ratesSection: {
+    marginTop: spacing.xl,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  ratesHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: spacing.sm,
+  },
+  ratesSubtitle: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  addBairroBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  addBairroBtnText: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.semiBold,
+    color: colors.primary,
+  },
+  newBairroCard: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    backgroundColor: colors.white,
+  },
+  bairrosListContainer: {
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.lg,
+    overflow: "hidden",
+  },
+  bairroRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  bairroName: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.semiBold,
+    color: colors.text,
+  },
+  bairroZone: {
+    fontSize: fontSizes.xs,
+    fontFamily: typography.regular,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  rateEditRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    width: 170,
+  },
+  rateDisplayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  rateFeeText: {
+    fontSize: fontSizes.sm,
+    fontFamily: typography.bold,
+    color: colors.primary,
+  },
+  editRateBtn: {
+    padding: spacing.xs,
+  },
+  saveRateBtn: {
+    padding: 2,
+  },
+  cancelRateBtn: {
+    padding: 2,
   },
   deleteStore: {
     flexDirection: "row",

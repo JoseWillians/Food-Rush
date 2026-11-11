@@ -40,11 +40,24 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# Uploads locais de imagens (persistidos via volume Docker)
+public/uploads/
+!public/uploads/.gitkeep
+
 # generated native folders
 /ios
 /android
 
-# Markdown files: ignora todos exceto README.md
+# Privacidade e arquivos de governança/agentes
+.codex/
+.gemini/
+.beads/
+graphify-out/
+logs/
+auth/
+
+# Markdown files: ignora todos exceto README.md (regra universal)
 *.md
+**/*.md
 !README.md
 !readme.md

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Platform,
   Pressable,
   StyleProp,
   StyleSheet,
@@ -57,7 +58,17 @@ export function AppInput({
       >
         {leftIcon ? <View style={styles.leftIconContainer}>{leftIcon}</View> : null}
         <TextInput
-          style={[styles.input, inputStyle]}
+          style={[
+            styles.input,
+            Platform.OS === "web" &&
+              ({
+                outlineStyle: "none",
+                outline: "none",
+                outlineWidth: 0,
+                outlineColor: "transparent",
+              } as any),
+            inputStyle,
+          ]}
           placeholderTextColor={colors.gray400}
           secureTextEntry={effectiveSecure}
           onFocus={(e) => {
@@ -132,6 +143,15 @@ const styles = StyleSheet.create({
     fontFamily: typography.regular,
     color: colors.text,
     paddingVertical: spacing.sm,
+    // Remove o contorno preto nativo do navegador ao focar
+    ...(Platform.OS === "web"
+      ? ({
+          outlineStyle: "none",
+          outline: "none",
+          outlineWidth: 0,
+          outlineColor: "transparent",
+        } as any)
+      : {}),
   },
   leftIconContainer: {
     marginRight: spacing.sm,

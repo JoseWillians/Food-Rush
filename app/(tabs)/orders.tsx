@@ -16,19 +16,20 @@ import { fontSizes, typography } from "@/src/theme/typography";
 import { useOrders } from "@/src/contexts/OrderContext";
 import { useCart } from "@/src/contexts/CartContext";
 import { formatCurrency } from "@/src/utils/currency";
-import { Order } from "@/src/types";
-import { AppButton } from "@/src/components/ui/AppButton";
+import { Order, OrderStatus } from "@/src/types";
 import { EmptyState } from "@/src/components/ui/EmptyState";
 import { confirmDialog } from "@/src/utils/dialog";
-import { OrderStatus } from "@/src/types";
 
 // Texto mostrado em cada pedido conforme o status
 const STATUS_LABEL: Record<OrderStatus, string> = {
   placed: "Aguardando a loja",
   preparing: "Em preparo",
+  ready: "Pronto para retirada",
   out_for_delivery: "A caminho da entrega",
+  on_the_way: "A caminho da entrega",
   arriving: "Chegando",
   delivered: "Concluído",
+  cancelled: "Cancelado",
 };
 
 type OrdersTab = "active" | "history";

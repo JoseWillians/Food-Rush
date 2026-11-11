@@ -75,6 +75,7 @@ export default function RootLayout() {
                 <Stack.Screen name="order/review" />
                 <Stack.Screen name="store/index" />
                 <Stack.Screen name="store/orders" />
+                <Stack.Screen name="courier/index" />
               </Stack>
             </OrderProvider>
           </FavoritesProvider>
