@@ -30,15 +30,15 @@ export default function Root({ children }: { children: ReactNode }) {
 
 const responsiveBackground = `
 html, body {
-  background-color: #f8f9fa !important;
-  color: #1a1a1a;
-  min-height: 100%;
+  height: 100%;
   margin: 0;
   padding: 0;
+  background-color: #f8f9fa;
+  color: #1a1a1a;
 }
 #root {
   display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+  height: 100%;
+  flex: 1;
   background-color: #f8f9fa;
 }`;

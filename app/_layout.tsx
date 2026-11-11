@@ -57,7 +57,7 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={Platform.OS === "web" ? ({ flex: 1, minHeight: "100vh" } as any) : undefined}>
       <AuthProvider>
         <CartProvider>
           <FavoritesProvider>
@@ -66,7 +66,10 @@ export default function RootLayout() {
               <Stack
                 screenOptions={{
                   headerShown: false,
-                  contentStyle: { backgroundColor: colors.white },
+                  contentStyle: {
+                    backgroundColor: colors.white,
+                    ...(Platform.OS === "web" ? ({ flex: 1, minHeight: "100vh" } as any) : {}),
+                  },
                   animation: "slide_from_right",
                 }}
               >

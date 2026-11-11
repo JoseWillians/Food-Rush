@@ -61,6 +61,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
+    ...(Platform.OS === "web" ? ({ minHeight: "100vh", width: "100%" } as any) : {}),
   },
   content: {
     alignItems: "center",
