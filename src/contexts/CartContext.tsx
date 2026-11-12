@@ -4,6 +4,8 @@ import { STORAGE_KEYS, storageGet, storageSet } from "@/src/utils/storage";
 import { mockRestaurants } from "@/src/mocks/restaurants";
 import { api } from "@/src/services/api";
 import { calculateSubtotal, calculateTotal } from "@/src/utils/pricing";
+import { neighborhoodFromAddress, resolveDeliveryFee } from "@/src/utils/deliveryFee";
+import { useAuth } from "@/src/contexts/AuthContext";
 
 type CartContextData = {
   items: CartItem[];
@@ -15,6 +17,10 @@ type CartContextData = {
   clearCart: () => void;
   subtotal: number;
   deliveryFee: number;
+  // De onde veio a taxa: bairro do cliente, rede de entregadores ou taxa única da loja
+  deliveryFeeSource: "neighborhood" | "courier_network" | "store";
+  // Zona do bairro do cliente (central, urbana, periférica, rural), usada no ganho do entregador
+  deliveryZone?: string;
   // Loja dos itens que estão no carrinho (null se o carrinho estiver vazio)
   cartRestaurant: Restaurant | null;
   // true se o produto é de outra loja diferente da que já está no carrinho
@@ -32,6 +38,13 @@ const CartContext = createContext<CartContextData>({} as CartContextData);
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [cartRestaurant, setCartRestaurant] = useState<Restaurant | null>(null);
+  const [feeInfo, setFeeInfo] = useState<ReturnType<typeof resolveDeliveryFee> | null>(null);
+  const [deliveryZone, setDeliveryZone] = useState<string | undefined>(undefined);
+  const { user } = useAuth();
+
+  // Bairro do endereço de entrega (o endereço padrão do perfil)
+  const neighborhoodName =
+    user?.addresses?.find((a) => a.isDefault)?.neighborhood ?? neighborhoodFromAddress(user?.address);
 
   // O carrinho só tem itens de uma loja, então ela é a loja do primeiro item
   const cartRestaurantId = items[0]?.product.restaurantId ?? null;
@@ -136,8 +149,40 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     items.map((item) => ({ price: item.product.price, quantity: item.quantity }))
   );
 
-  // Taxa de entrega da loja do carrinho (cada loja tem a sua)
-  const deliveryFee = items.length > 0 ? cartRestaurant?.deliveryFee ?? 0 : 0;
+  // Taxa de entrega: usa a taxa que a loja cadastrou para o bairro do cliente;
+  // se não houver, a taxa da rede de entregadores ou a taxa única da loja
+  useEffect(() => {
+    if (!cartRestaurant) {
+      setFeeInfo(null);
+      return;
+    }
+    let ativo = true;
+    (async () => {
+      const [neighborhoods, rates] = await Promise.all([
+        api.getNeighborhoods(cartRestaurant.cityId || "cid-santaines"),
+        api.getStoreDeliveryRates(cartRestaurant.id),
+      ]);
+      const bairro = neighborhoodName
+        ? neighborhoods.find((n) => n.name.toLowerCase() === neighborhoodName.toLowerCase())
+        : undefined;
+      const result = resolveDeliveryFee({
+        store: cartRestaurant,
+        neighborhoodId: bairro?.id,
+        zone: bairro?.zone,
+        rates,
+      });
+      if (ativo) {
+        setFeeInfo(result);
+        setDeliveryZone(bairro?.zone);
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [cartRestaurant, neighborhoodName]);
+
+  const deliveryFee = items.length > 0 ? feeInfo?.deliveryFee ?? cartRestaurant?.deliveryFee ?? 0 : 0;
+  const deliveryFeeSource = feeInfo?.source ?? "store";
   const total = calculateTotal(subtotal, deliveryFee);
   const itemCount = items.reduce((acc, item) => acc + item.quantity, 0);
 
@@ -153,6 +198,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         clearCart,
         subtotal,
         deliveryFee,
+        deliveryFeeSource,
+        deliveryZone,
         cartRestaurant,
         isFromAnotherStore,
         total,

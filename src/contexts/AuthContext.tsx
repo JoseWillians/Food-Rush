@@ -10,9 +10,9 @@ export type AuthResult =
   | { ok: true }
   | { ok: false; field: "email" | "password"; message: string };
 
-// Conta salva no aparelho. Como o app ainda não tem um backend de usuários,
-// as contas ficam no AsyncStorage. Num app real a senha ficaria no servidor,
-// guardada com hash, e nunca no celular.
+// Conta salva no aparelho (AsyncStorage), para o app funcionar sem servidor.
+// Quando o servidor está ligado, a conta também é criada lá, onde a senha fica
+// guardada só como hash. Assim a pessoa entra com a mesma conta em outro aparelho.
 type StoredAccount = {
   password: string;
   user: User;
@@ -38,33 +38,19 @@ const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 async function loadAccounts(): Promise<StoredAccount[]> {
-  let stored = await storageGet<StoredAccount[] | null>(STORAGE_KEYS.ACCOUNTS, null);
-  try {
-    const remote = await api.getRemoteAccounts();
-    if (Array.isArray(remote) && remote.length > 0) {
-      const mergedMap = new Map<string, StoredAccount>();
-      for (const a of remote) {
-        if (a?.user?.email) mergedMap.set(normalizeEmail(a.user.email), a);
-      }
-      if (stored) {
-        for (const a of stored) {
-          if (a?.user?.email) mergedMap.set(normalizeEmail(a.user.email), a);
-        }
-      }
-      const merged = Array.from(mergedMap.values());
-      await storageSet(STORAGE_KEYS.ACCOUNTS, merged);
-      return merged;
-    }
-  } catch {
-    // Offline fallback
-  }
-
+  const stored = await storageGet<StoredAccount[] | null>(STORAGE_KEYS.ACCOUNTS, null);
   if (stored) return stored;
   // Primeira vez que o app abre: cria a conta de demonstração
   const initial = [{ password: DEMO_PASSWORD, user: mockUser }];
   await storageSet(STORAGE_KEYS.ACCOUNTS, initial);
-  api.syncAccounts(initial);
+  api.registerAccount(mockUser, DEMO_PASSWORD);
   return initial;
+}
+
+// Guarda (ou atualiza) a conta no aparelho
+async function saveLocalAccount(accounts: StoredAccount[], account: StoredAccount) {
+  const others = accounts.filter((a) => normalizeEmail(a.user.email) !== normalizeEmail(account.user.email));
+  await storageSet(STORAGE_KEYS.ACCOUNTS, [...others, account]);
 }
 
 function findAccount(accounts: StoredAccount[], email: string) {
@@ -98,16 +84,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const accounts = await loadAccounts();
     const account = findAccount(accounts, email);
 
-    if (!account) {
-      return { ok: false, field: "email", message: "Não existe conta com este e-mail." };
-    }
-    if (account.password !== password) {
-      return { ok: false, field: "password", message: "Senha incorreta." };
+    // 1. Conta deste aparelho com a senha certa: entra direto
+    if (account && account.password === password) {
+      setUser(account.user);
+      await storageSet(STORAGE_KEYS.AUTH_USER, account.user);
+      return { ok: true };
     }
 
-    setUser(account.user);
-    await storageSet(STORAGE_KEYS.AUTH_USER, account.user);
-    return { ok: true };
+    // 2. Senão, pergunta ao servidor (conta criada em outro aparelho ou senha trocada)
+    const remote = await api.remoteLogin(email, password);
+    if (remote?.ok) {
+      await saveLocalAccount(accounts, { password, user: remote.user });
+      setUser(remote.user);
+      await storageSet(STORAGE_KEYS.AUTH_USER, remote.user);
+      return { ok: true };
+    }
+
+    if (!account && (remote === null || remote.reason === "not_found")) {
+      return { ok: false, field: "email", message: "Não existe conta com este e-mail." };
+    }
+    return { ok: false, field: "password", message: "Senha incorreta." };
   };
 
   const signUp = async (userData: Partial<User>, password: string): Promise<AuthResult> => {
@@ -115,6 +111,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const email = normalizeEmail(userData.email || "");
 
     if (findAccount(accounts, email)) {
+      return { ok: false, field: "email", message: "Este e-mail já está cadastrado." };
+    }
+    // Confere também no servidor (o e-mail pode ter sido usado em outro aparelho)
+    const remoteCheck = await api.remoteLogin(email, "");
+    if (remoteCheck && !remoteCheck.ok && remoteCheck.reason === "wrong_password") {
       return { ok: false, field: "email", message: "Este e-mail já está cadastrado." };
     }
 
@@ -192,7 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const newAccounts = [...accounts, { password, user: newUser }];
     await storageSet(STORAGE_KEYS.ACCOUNTS, newAccounts);
-    api.syncAccounts(newAccounts);
+    api.registerAccount(newUser, password);
     setUser(newUser);
     await storageSet(STORAGE_KEYS.AUTH_USER, newUser);
     return { ok: true };
@@ -202,12 +203,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const resetPassword = async (email: string, newPassword: string): Promise<AuthResult> => {
     const accounts = await loadAccounts();
     const account = findAccount(accounts, email);
+    const remote = await api.resetRemotePassword(email, newPassword);
     if (!account) {
+      // A conta pode existir só no servidor (criada em outro aparelho)
+      if (remote) return { ok: true };
       return { ok: false, field: "email", message: "Não existe conta com este e-mail." };
     }
     account.password = newPassword;
     await storageSet(STORAGE_KEYS.ACCOUNTS, accounts);
-    api.syncAccounts(accounts);
     return { ok: true };
   };
 
@@ -223,8 +226,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (index > -1) {
       accounts[index] = { ...accounts[index], user: updated };
       await storageSet(STORAGE_KEYS.ACCOUNTS, accounts);
-      api.syncAccounts(accounts);
     }
+    api.updateRemoteUser(updated);
   };
 
   const signOut = async () => {

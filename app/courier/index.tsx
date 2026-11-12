@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -22,6 +22,7 @@ import { api } from "@/src/services/api";
 import { CourierProfile, Order } from "@/src/types";
 import { formatCurrency } from "@/src/utils/currency";
 import { showMessage } from "@/src/utils/dialog";
+import { courierPayoutFor } from "@/src/utils/deliveryFee";
 import * as ImagePicker from "expo-image-picker";
 
 /**
@@ -29,10 +30,18 @@ import * as ImagePicker from "expo-image-picker";
  * Fornece controle de disponibilidade (online/offline), visualização de corridas,
  * cálculo dinâmico de taxa, aceitação/conclusão de entregas e upload de avatar.
  */
+// Quanto o entregador recebe pela corrida: o valor gravado no pedido ou a regra
+// mínimo por rota (R$ 6,50) + R$ 1,50 por km, com a distância média urbana
+const payoutOf = (order: Order) => order.courierFee ?? courierPayoutFor(undefined);
+
 export default function CourierDashboardScreen() {
   const { user, updateUser } = useAuth();
-  const [profile, setProfile] = useState<CourierProfile | null>(user?.courierProfile ?? null);
+  const [profile, setProfile] = useState<CourierProfile | null>(
+    user?.courierProfile ?? user?.courier ?? null
+  );
   const [availableOrders, setAvailableOrders] = useState<Order[]>([]);
+  // Corridas aceitas por este entregador (somem da lista de disponíveis depois de aceitas)
+  const [myOrders, setMyOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
@@ -40,16 +49,62 @@ export default function CourierDashboardScreen() {
 
   const isCourier = user?.role === "courier";
 
-  const loadData = useCallback(async () => {
+  // Perfil atual, lido pela atualização automática sem recriar o intervalo
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  // Corridas em andamento na última atualização e as que o próprio entregador concluiu,
+  // para avisar quando o cliente confirmar a entrega
+  const lastActiveRef = useRef<Order[]>([]);
+  const completedHereRef = useRef<Set<string>>(new Set());
+
+  // withProfile: busca o perfil de novo (só ao abrir a tela; a cada 3 s atualiza só as corridas)
+  const loadData = useCallback(async (withProfile = true) => {
     if (!user) return;
     setLoading(true);
     try {
-      const p = await api.getCourierProfile(user.id);
-      if (p) {
-        setProfile(p);
+      let p = profileRef.current;
+      if (withProfile || !p) {
+        const fresh = await api.getCourierProfile(user.id, user.courierProfile ?? user.courier ?? null);
+        if (fresh) {
+          p = fresh;
+          setProfile(fresh);
+        }
       }
-      const orders = await api.getAvailableDeliveries("cidade-santa-ines");
+      const [orders, mine, summary] = await Promise.all([
+        api.getAvailableDeliveries("cid-santaines"),
+        p ? api.getCourierActiveOrders(p.id) : Promise.resolve([] as Order[]),
+        p ? api.getCourierSummary(p.id) : Promise.resolve(null),
+      ]);
       setAvailableOrders(orders);
+      setMyOrders(mine);
+
+      // Ganhos vindos do servidor (contam também as entregas confirmadas pelo cliente)
+      if (summary) {
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                totalDeliveries: summary.totalDeliveries,
+                totalEarnings: summary.totalEarnings,
+                completedDeliveries: summary.todayDeliveries,
+                todayEarnings: summary.todayEarnings,
+              }
+            : prev
+        );
+      }
+
+      // Corrida que sumiu sem o entregador concluir: o cliente confirmou o recebimento
+      const confirmedByCustomer = lastActiveRef.current.filter(
+        (o) => !mine.some((m) => m.id === o.id) && !completedHereRef.current.has(o.id)
+      );
+      if (summary && confirmedByCustomer.length > 0) {
+        const o = confirmedByCustomer[0];
+        showMessage(
+          "Entrega confirmada pelo cliente",
+          `O pedido de ${o.restaurantName} foi confirmado. ${formatCurrency(payoutOf(o))} entrou nos seus ganhos.`
+        );
+      }
+      lastActiveRef.current = mine;
     } catch (err: any) {
       console.warn("Erro ao carregar dados do entregador:", err.message);
     } finally {
@@ -61,7 +116,7 @@ export default function CourierDashboardScreen() {
     useCallback(() => {
       loadData();
       const intervalId = setInterval(() => {
-        loadData();
+        loadData(false);
       }, 3000);
       return () => clearInterval(intervalId);
     }, [loadData])
@@ -86,7 +141,7 @@ export default function CourierDashboardScreen() {
     );
   }
 
-  const isOnline = profile?.status === "online";
+  const isOnline = profile?.isOnline === true;
   const vehicleLabel =
     profile?.vehicleType === "moto"
       ? "Motocicleta"
@@ -162,7 +217,7 @@ export default function CourierDashboardScreen() {
     if (!profile) return;
     setAcceptingId(orderId);
     try {
-      await api.acceptDelivery(orderId, profile.id);
+      await api.acceptDelivery(orderId, profile.id, profile.name || user.name);
       showMessage("Corrida Aceita!", "Dirija-se ao restaurante para retirar o pedido do cliente.");
       await loadData();
     } catch (err: any) {
@@ -173,11 +228,18 @@ export default function CourierDashboardScreen() {
   };
 
   // Concluir Corrida
-  const handleCompleteDelivery = async (orderId: string) => {
+  const handleCompleteDelivery = async (order: Order) => {
     if (!profile) return;
-    setCompletingId(orderId);
+    setCompletingId(order.id);
+    completedHereRef.current.add(order.id);
     try {
-      await api.completeDelivery(orderId, 6.0);
+      await api.completeDelivery(order.id, profile.id, payoutOf(order));
+      // Guarda os ganhos também na conta, para aparecerem em outro aparelho
+      const updatedProfile = await api.getCourierProfile(user.id, profile);
+      if (updatedProfile) {
+        setProfile(updatedProfile);
+        await updateUser({ courierProfile: updatedProfile });
+      }
       showMessage("Entrega Concluída!", "Parabéns! O valor da entrega foi adicionado aos seus ganhos de hoje.");
       await loadData();
     } catch (err: any) {
@@ -188,11 +250,7 @@ export default function CourierDashboardScreen() {
   };
 
   // Separar pedido ativo e pedidos disponíveis
-  const activeOrder = availableOrders.find(
-    (o) =>
-      (o.courierId === profile?.id || o.courierName === user.name) &&
-      (o.status === "on_the_way" || o.status === "out_for_delivery")
-  );
+  const activeOrder = myOrders[0];
   const pendingOrders = availableOrders.filter(
     (o) => !o.courierId && (o.status === "ready" || o.status === "preparing" || o.status === "placed")
   );
@@ -300,7 +358,7 @@ export default function CourierDashboardScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.infoBannerTitle}>Cálculo de Repasse (Santa Inês - MA)</Text>
             <Text style={styles.infoBannerDesc}>
-              Taxa base de R$ 6,00 + adicional por bairro. 85% do valor da taxa vai direto para o entregador.
+              Mínimo garantido de R$ 6,50 por rota + R$ 1,50 por km rodado (distância estimada pelo bairro), mais bônus em promoções.
             </Text>
           </View>
         </View>
@@ -314,7 +372,7 @@ export default function CourierDashboardScreen() {
                 <Text style={styles.activeBadgeText}>EM ANDAMENTO</Text>
               </View>
               <Text style={styles.activePayout}>
-                Você recebe: {formatCurrency(activeOrder.deliveryFee * 0.85)}
+                Você recebe: {formatCurrency(payoutOf(activeOrder))}
               </Text>
             </View>
 
@@ -328,7 +386,7 @@ export default function CourierDashboardScreen() {
 
             <AppButton
               title="Confirmar Entrega Realizada"
-              onPress={() => handleCompleteDelivery(activeOrder.id)}
+              onPress={() => handleCompleteDelivery(activeOrder)}
               loading={completingId === activeOrder.id}
               style={{ marginTop: spacing.md }}
             />
@@ -365,7 +423,7 @@ export default function CourierDashboardScreen() {
           </View>
         ) : (
           pendingOrders.map((order) => {
-            const courierPayout = order.deliveryFee * 0.85;
+            const courierPayout = payoutOf(order);
             return (
               <View key={order.id} style={styles.orderCard}>
                 <View style={styles.orderHeader}>

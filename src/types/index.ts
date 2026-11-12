@@ -145,10 +145,10 @@ export type StoreDeliveryRate = {
 
 export type CourierRateConfig = {
   cityId: string;
-  baseFee: number;
-  extraPerZone: number;
-  courierPayoutPct: number;
-  platformFeePct: number;
+  minPerRoute: number; // mínimo garantido por rota (R$)
+  perKm: number; // valor por km rodado (R$)
+  promoBonus: number; // bônus de promoção por corrida (R$)
+  kmByZone?: Record<string, number>;
 };
 
 export type CourierProfile = {

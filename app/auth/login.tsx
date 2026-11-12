@@ -822,7 +822,7 @@ export default function AuthScreen() {
                     <View style={styles.autoFeeNotice}>
                       <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
                       <Text style={styles.autoFeeNoticeText}>
-                        Na <Text style={{ fontFamily: typography.semiBold }}>Rede Autônoma</Text>, a taxa é calculada automaticamente por bairro (a partir de R$ 6,00 em Santa Inês) e 85% do valor vai direto para o motoboy parceiro.
+                        Na <Text style={{ fontFamily: typography.semiBold }}>Rede Autônoma</Text>, a taxa é calculada automaticamente pela distância: o motoboy parceiro recebe no mínimo R$ 6,50 por rota mais R$ 1,50 por km rodado.
                       </Text>
                     </View>
                   )}

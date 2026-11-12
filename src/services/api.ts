@@ -21,6 +21,7 @@ import { mockProducts } from "@/src/mocks/products";
 import { mockReviews } from "@/src/mocks/reviews";
 import { STORAGE_KEYS, storageGet, storageSet } from "@/src/utils/storage";
 import { isDefaultStoreImage, storeImageFor, suggestFoodImage } from "@/src/constants/foodImages";
+import { calculateCourierFee } from "@/src/utils/deliveryFee";
 
 /**
  * Endereço do servidor (server.js), escolhido nesta ordem:
@@ -460,7 +461,32 @@ export const api = {
    */
   async getStoreOrders(restaurantId: string): Promise<Order[]> {
     const all = await storageGet<Order[]>(STORAGE_KEYS.STORE_ORDERS, []);
-    return all.filter((o) => o.restaurantId === restaurantId);
+    const local = all.filter((o) => o.restaurantId === restaurantId);
+
+    // Busca também no servidor: o cliente pode ter pedido de outro aparelho
+    let remote: Order[] | null = null;
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/orders?restaurantId=${encodeURIComponent(restaurantId)}`);
+      if (res.ok) remote = await res.json();
+    } catch {
+      // Servidor desligado: usa só os pedidos deste aparelho
+    }
+    if (!remote) return local;
+
+    // Junta as duas listas. Se o mesmo pedido estiver nas duas, fica a versão
+    // mais avançada (evita voltar o status enquanto uma mudança ainda está sendo enviada)
+    const byId = new Map<string, Order>();
+    for (const o of [...local, ...remote.filter((r) => r.restaurantId === restaurantId)]) {
+      const prev = byId.get(o.id);
+      byId.set(o.id, !prev || statusRank(o.status) >= statusRank(prev.status) ? { ...prev, ...o } : { ...o, ...prev });
+    }
+    const merged = Array.from(byId.values()).sort((a, b) => orderTime(b) - orderTime(a));
+
+    await storageSet(STORAGE_KEYS.STORE_ORDERS, [
+      ...merged,
+      ...all.filter((o) => o.restaurantId !== restaurantId),
+    ]);
+    return merged;
   },
 
   /**
@@ -867,15 +893,15 @@ export const api = {
       };
     }
 
-    // Motoboy autônomo padrão (R$ 6,00 base)
-    const baseFee = 6.0;
-    const courierPayout = Math.round(baseFee * 0.85 * 100) / 100;
+    // Rede de entregadores: mínimo por rota + km estimado pela zona do bairro
+    const neighborhoods = await this.getNeighborhoods();
+    const zone = neighborhoods.find((n) => n.id === bairroId)?.zone;
+    const fee = calculateCourierFee(zone);
     return {
-      deliveryFee: baseFee,
+      deliveryFee: fee.routeFee,
       estimatedTime: "25-40 min",
       source: "independent_courier",
-      courierFee: courierPayout,
-      platformFee: Math.round((baseFee - courierPayout) * 100) / 100,
+      courierFee: fee.courierPayout,
     };
   },
 
@@ -916,7 +942,7 @@ export const api = {
   // ====================================================================
   // ENTREGADORES / MOTOBOYS (DASHBOARD, DISPONIBILIDADE E CORRIDAS)
   // ====================================================================
-  async getCourierProfile(userId: string): Promise<CourierProfile | null> {
+  async getCourierProfile(userId: string, fallback?: CourierProfile | null): Promise<CourierProfile | null> {
     try {
       const res = await fetchWithTimeout(`${API_BASE}/couriers/${encodeURIComponent(userId)}`);
       if (res.ok) return await res.json();
@@ -926,6 +952,12 @@ export const api = {
 
     const saved = await storageGet<CourierProfile | null>(STORAGE_KEYS.COURIER_PROFILE, null);
     if (saved && (saved.userId === userId || saved.id === userId)) return saved;
+    // Perfil que veio junto com a conta (ex.: entregador entrando em outro aparelho).
+    // Fica salvo no aparelho para os ganhos das próximas corridas serem somados nele.
+    if (fallback) {
+      await storageSet(STORAGE_KEYS.COURIER_PROFILE, fallback);
+      return fallback;
+    }
 
     // Entregador demo padrão
     return {
@@ -979,7 +1011,15 @@ export const api = {
       };
       await storageSet(STORAGE_KEYS.COURIER_PROFILE, profile);
     }
-    sendInBackground(`/couriers/${encodeURIComponent(courierId)}/status`, "PATCH", { isOnline, status });
+    sendInBackground(`/couriers/${encodeURIComponent(courierId)}/status`, "PATCH", {
+      isOnline,
+      status,
+      name: profile.name,
+      phone: profile.phone,
+      vehicle: profile.vehicle,
+      vehicleType: profile.vehicleType,
+      mode: profile.mode,
+    });
     return profile;
   },
 
@@ -1006,118 +1046,256 @@ export const api = {
     );
   },
 
+  /**
+   * Busca no servidor o status atual de alguns pedidos (a loja ou o entregador
+   * podem ter mudado o pedido em outro aparelho). Sem servidor, devolve vazio.
+   */
+  async getOrderUpdates(orderIds: string[]): Promise<Order[]> {
+    if (orderIds.length === 0) return [];
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/orders`);
+      if (res.ok) {
+        const all: Order[] = await res.json();
+        return all.filter((o) => orderIds.includes(o.id));
+      }
+    } catch {
+      // offline
+    }
+    return [];
+  },
+
   async acceptDelivery(
     orderId: string,
     courierId: string,
     courierName = "Entregador Parceiro"
-  ): Promise<Order> {
+  ): Promise<Order | null> {
+    let serverOrder: Order | null = null;
+    let conflict: string | null = null;
     try {
       const res = await fetchWithTimeout(`${API_BASE}/orders/${encodeURIComponent(orderId)}/accept-delivery`, {
         method: "POST",
         body: JSON.stringify({ courierId, courierName }),
       });
-      if (res.ok) return await res.json();
+      if (res.status === 409) {
+        // Outro entregador aceitou antes: avisa a tela em vez de "roubar" a corrida
+        const data = await res.json().catch(() => ({}));
+        conflict = data.error || "Outro entregador já aceitou esta corrida.";
+      } else if (res.ok) {
+        serverOrder = await res.json();
+      }
     } catch {
-      // Offline
+      // Servidor desligado: segue no modo offline
+    }
+    if (conflict) throw new Error(conflict);
+
+    // Sem servidor, confere na lista local se ninguém aceitou antes
+    if (!serverOrder) {
+      const storeOrders = await storageGet<Order[]>(STORAGE_KEYS.STORE_ORDERS, []);
+      const current = storeOrders.find((o) => o.id === orderId);
+      if (current?.courierId && current.courierId !== courierId) {
+        throw new Error("Outro entregador já aceitou esta corrida.");
+      }
     }
 
-    // Atualização local
-    const storeOrders = await storageGet<Order[]>(STORAGE_KEYS.STORE_ORDERS, []);
-    const updated = storeOrders.map((o) =>
-      o.id === orderId
-        ? {
-            ...o,
-            courierId,
-            courierName,
-            status: "out_for_delivery" as OrderStatus,
-          }
-        : o
-    );
-    await storageSet(STORAGE_KEYS.STORE_ORDERS, updated);
+    const changes: Partial<Order> = {
+      courierId,
+      courierName,
+      status: "out_for_delivery",
+    };
+    const updated = await updateOrderLocally(orderId, changes);
+    const accepted = serverOrder ? { ...serverOrder, ...changes } : updated;
 
-    // Registra na lista de corridas do entregador
-    const courierOrders = await storageGet<Order[]>(STORAGE_KEYS.COURIER_ORDERS, []);
-    const active = updated.find((o) => o.id === orderId);
-    if (active) {
-      await storageSet(STORAGE_KEYS.COURIER_ORDERS, [active, ...courierOrders.filter((o) => o.id !== orderId)]);
+    // Guarda na lista de corridas do entregador (usada quando o servidor está desligado)
+    if (accepted) {
+      const courierOrders = await storageGet<Order[]>(STORAGE_KEYS.COURIER_ORDERS, []);
+      await storageSet(STORAGE_KEYS.COURIER_ORDERS, [accepted, ...courierOrders.filter((o) => o.id !== orderId)]);
     }
-
-    // Sincroniza com os pedidos globais do cliente
-    const globalOrders = await storageGet<Order[]>(STORAGE_KEYS.ORDERS, []);
-    await storageSet(
-      STORAGE_KEYS.ORDERS,
-      globalOrders.map((o) =>
-        o.id === orderId
-          ? { ...o, courierId, courierName, status: "out_for_delivery" as OrderStatus }
-          : o
-      )
-    );
-
-    if (active?.customerId) {
-      const key = ordersKeyOf(active.customerId);
-      const custOrders = await storageGet<Order[]>(key, []);
-      await storageSet(
-        key,
-        custOrders.map((o) =>
-          o.id === orderId
-            ? { ...o, courierId, courierName, status: "out_for_delivery" as OrderStatus }
-            : o
-        )
-      );
-    }
-
-    return active || storeOrders[0];
+    return accepted;
   },
 
-  async completeDelivery(orderId: string, courierIdOrFee: string | number = 6.0): Promise<void> {
-    const courierFee = typeof courierIdOrFee === "number" ? courierIdOrFee : 6.0;
+  /**
+   * Ganhos do entregador calculados pelo servidor a partir das corridas entregues
+   * (vale também quando quem confirmou a entrega foi o cliente). Sem servidor, null.
+   */
+  async getCourierSummary(courierId: string): Promise<{
+    totalDeliveries: number;
+    totalEarnings: number;
+    todayDeliveries: number;
+    todayEarnings: number;
+  } | null> {
     try {
-      await fetchWithTimeout(`${API_BASE}/orders/${encodeURIComponent(orderId)}/complete-delivery`, {
-        method: "PATCH",
-        body: JSON.stringify({ courierFee }),
-      });
+      const res = await fetchWithTimeout(`${API_BASE}/couriers/${encodeURIComponent(courierId)}/summary`);
+      if (res.ok) return await res.json();
     } catch {
-      // Offline
+      // offline
     }
+    return null;
+  },
 
-    // Atualiza status localmente
-    const storeOrders = await storageGet<Order[]>(STORAGE_KEYS.STORE_ORDERS, []);
+  /**
+   * Corridas que o entregador aceitou e ainda não concluiu.
+   */
+  async getCourierActiveOrders(courierId: string): Promise<Order[]> {
+    const isActive = (o: Order) =>
+      o.courierId === courierId &&
+      (o.status === "out_for_delivery" || o.status === "on_the_way" || o.status === "arriving");
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/couriers/${encodeURIComponent(courierId)}/active-orders`);
+      if (res.ok) return await res.json();
+    } catch {
+      // Offline: usa a lista salva no aparelho
+    }
+    const courierOrders = await storageGet<Order[]>(STORAGE_KEYS.COURIER_ORDERS, []);
+    return courierOrders.filter(isActive);
+  },
+
+  /**
+   * Conclui a corrida: marca o pedido como entregue em todas as listas e soma
+   * o repasse (courierFee) aos ganhos do entregador.
+   */
+  async completeDelivery(orderId: string, courierId: string, courierFee: number): Promise<void> {
+    let refused: string | null = null;
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/orders/${encodeURIComponent(orderId)}/complete-delivery`, {
+        method: "PATCH",
+        body: JSON.stringify({ courierId, courierFee }),
+      });
+      if (res.status === 403) {
+        const data = await res.json().catch(() => ({}));
+        refused = data.error || "Esta corrida é de outro entregador.";
+      }
+    } catch {
+      // Offline: segue com a atualização local
+    }
+    if (refused) throw new Error(refused);
+
+    await updateOrderLocally(orderId, { status: "delivered" });
+
+    const courierOrders = await storageGet<Order[]>(STORAGE_KEYS.COURIER_ORDERS, []);
     await storageSet(
-      STORAGE_KEYS.STORE_ORDERS,
-      storeOrders.map((o) => (o.id === orderId ? { ...o, status: "delivered" as OrderStatus } : o))
+      STORAGE_KEYS.COURIER_ORDERS,
+      courierOrders.map((o) => (o.id === orderId ? { ...o, status: "delivered" as OrderStatus } : o))
     );
 
-    // Atualiza saldo do entregador
     const profile = await storageGet<CourierProfile | null>(STORAGE_KEYS.COURIER_PROFILE, null);
-    if (profile) {
+    if (profile && (profile.id === courierId || profile.userId === courierId)) {
       await storageSet(STORAGE_KEYS.COURIER_PROFILE, {
         ...profile,
         totalDeliveries: profile.totalDeliveries + 1,
         completedDeliveries: (profile.completedDeliveries ?? 0) + 1,
-        totalEarnings: profile.totalEarnings + courierFee,
-        todayEarnings: (profile.todayEarnings ?? 0) + courierFee,
+        totalEarnings: Math.round((profile.totalEarnings + courierFee) * 100) / 100,
+        todayEarnings: Math.round(((profile.todayEarnings ?? 0) + courierFee) * 100) / 100,
       });
     }
   },
 
-  /**
-   * Obtém contas persistentes salvas no backend
-   */
-  async getRemoteAccounts(): Promise<any[]> {
+  // ====================================================================
+  // CONTAS NO SERVIDOR
+  // O servidor guarda só o hash da senha e nunca devolve senhas.
+  // Respostas: true/false quando o servidor respondeu, null quando está desligado.
+  // ====================================================================
+  async registerAccount(user: any, password: string): Promise<"ok" | "exists" | null> {
     try {
-      const res = await fetchWithTimeout(`${API_BASE}/auth/accounts`);
-      if (res.ok) return await res.json();
+      const res = await fetchWithTimeout(`${API_BASE}/auth/register`, {
+        method: "POST",
+        body: JSON.stringify({ user, password }),
+      });
+      if (res.status === 409) return "exists";
+      if (res.ok) return "ok";
     } catch {
-      // offline fallback
+      // offline
     }
-    return [];
+    return null;
   },
 
-  /**
-   * Sincroniza a lista de contas salvas com o backend
-   */
-  syncAccounts(accounts: any[]) {
-    sendInBackground("/auth/accounts", "POST", { accounts });
+  async remoteLogin(
+    email: string,
+    password: string
+  ): Promise<{ ok: true; user: any } | { ok: false; reason: "not_found" | "wrong_password" } | null> {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/login`, {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return { ok: true, user: data.user };
+      }
+      if (res.status === 404) return { ok: false, reason: "not_found" };
+      if (res.status === 401) return { ok: false, reason: "wrong_password" };
+    } catch {
+      // offline
+    }
+    return null;
   },
+
+  async resetRemotePassword(email: string, newPassword: string): Promise<boolean | null> {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/reset-password`, {
+        method: "POST",
+        body: JSON.stringify({ email, newPassword }),
+      });
+      return res.ok;
+    } catch {
+      return null;
+    }
+  },
+
+  updateRemoteUser(user: any) {
+    sendInBackground(`/auth/users/${encodeURIComponent(user.email)}`, "PUT", { user });
+  },
+
 };
 
+
+/**
+ * Aplica uma mudança no pedido em todas as listas salvas no aparelho:
+ * pedidos da loja, lista geral e pedidos do cliente. Devolve o pedido atualizado.
+ */
+async function updateOrderLocally(orderId: string, changes: Partial<Order>): Promise<Order | null> {
+  let found: Order | null = null;
+  const apply = (list: Order[]) =>
+    list.map((o) => {
+      if (o.id !== orderId) return o;
+      const next = { ...o, ...changes } as Order;
+      found = next;
+      return next;
+    });
+
+  const storeOrders = await storageGet<Order[]>(STORAGE_KEYS.STORE_ORDERS, []);
+  await storageSet(STORAGE_KEYS.STORE_ORDERS, apply(storeOrders));
+
+  const globalOrders = await storageGet<Order[]>(STORAGE_KEYS.ORDERS, []);
+  await storageSet(STORAGE_KEYS.ORDERS, apply(globalOrders));
+
+  const customerId = (found as Order | null)?.customerId;
+  if (customerId) {
+    const key = ordersKeyOf(customerId);
+    const customerOrders = await storageGet<Order[]>(key, []);
+    await storageSet(key, apply(customerOrders));
+  }
+  return found;
+}
+
+// Ordem das etapas do pedido, para saber qual versão está mais avançada
+const STATUS_ORDER: OrderStatus[] = [
+  "placed",
+  "preparing",
+  "ready",
+  "out_for_delivery",
+  "on_the_way",
+  "arriving",
+  "delivered",
+  "cancelled",
+];
+
+function statusRank(status: OrderStatus): number {
+  const i = STATUS_ORDER.indexOf(status);
+  return i === -1 ? 0 : i;
+}
+
+// Os ids são "ord-<momento da criação>": dá para ordenar do mais novo ao mais antigo
+function orderTime(order: Order): number {
+  const n = Number(String(order.id).replace(/\D/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
