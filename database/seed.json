@@ -38,10 +38,10 @@
   ],
   "motoboyTaxasConfig": {
     "cityId": "cid-santaines",
-    "baseFee": 6.0,
-    "extraPerZone": 2.0,
-    "courierPayoutPct": 85.0,
-    "platformFeePct": 15.0
+    "minPerRoute": 6.5,
+    "perKm": 1.5,
+    "promoBonus": 0,
+    "kmByZone": { "central": 2, "urbana": 3, "periferica": 5, "rural": 8 }
   },
   "lojaTaxasBairro": [
     { "id": "tb-1-centro", "restaurantId": "1", "bairroId": "b-centro", "deliveryFee": 4.0, "estimatedTime": "20-30 min" },

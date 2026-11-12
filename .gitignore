@@ -40,7 +40,8 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# Uploads locais de imagens (persistidos via volume Docker)
+# Dados salvos pelo servidor (contas, pedidos...) e uploads locais de imagens
+database/persistent-state.json
 public/uploads/
 !public/uploads/.gitkeep
 
@@ -54,7 +55,7 @@ public/uploads/
 .beads/
 graphify-out/
 logs/
-auth/
+/auth/
 
 # Markdown files: ignora todos exceto README.md (regra universal)
 *.md

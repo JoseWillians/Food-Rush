@@ -930,7 +930,7 @@ export default function StoreDashboardScreen() {
                   Modalidade: Rede Autônoma de Entregadores
                 </Text>
                 <Text style={styles.independentModeDesc}>
-                  Sua loja utiliza os entregadores autônomos da rede Food Rush. As taxas de entrega para os clientes de Santa Inês são calculadas automaticamente por bairro (a partir de R$ 6,00) e repassadas em 85% para o motoboy. A loja não pode alterar essas taxas manualmente. Para definir taxas próprias, altere a modalidade da loja para "Motoboy Próprio".
+                  Sua loja utiliza os entregadores autônomos da rede Food Rush. As taxas de entrega para os clientes de Santa Inês são calculadas automaticamente pela distância até o bairro: o motoboy recebe no mínimo R$ 6,50 por rota mais R$ 1,50 por km rodado. A loja não pode alterar essas taxas manualmente. Para definir taxas próprias, altere a modalidade da loja para "Motoboy Próprio".
                 </Text>
               </View>
             </View>

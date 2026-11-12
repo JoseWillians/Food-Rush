@@ -9,6 +9,7 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { useOrders } from "@/src/contexts/OrderContext";
 import { showMessage } from "@/src/utils/dialog";
 import { api } from "@/src/services/api";
+import { courierPayoutFor } from "@/src/utils/deliveryFee";
 import { Header } from "@/src/components/ui/Header";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AddressCard } from "@/src/components/checkout/AddressCard";
@@ -24,7 +25,7 @@ import { Coupon, calculateDiscount, calculateTotal } from "@/src/utils/pricing";
  * endereço, forma de pagamento, cupom e resumo de valores.
  */
 export default function CheckoutScreen() {
-  const { items, subtotal, deliveryFee, clearCart } = useCart();
+  const { items, subtotal, deliveryFee, deliveryZone, clearCart } = useCart();
   const { user } = useAuth();
   const { createOrder } = useOrders();
 
@@ -77,6 +78,8 @@ export default function CheckoutScreen() {
         items: [...items],
         subtotal,
         deliveryFee,
+        // Quanto o entregador da rede ganha: R$ 6,50 por rota + R$ 1,50 por km (estimado pelo bairro)
+        courierFee: courierPayoutFor(deliveryZone),
         total: finalTotal,
         deliveryAddress: user.address,
         paymentMethod,

@@ -153,10 +153,9 @@ CREATE TABLE IF NOT EXISTS couriers (
 CREATE TABLE IF NOT EXISTS motoboy_taxas_config (
     id VARCHAR(64) PRIMARY KEY,
     city_id VARCHAR(64) REFERENCES cidades(id) ON DELETE CASCADE,
-    base_fee NUMERIC(10, 2) NOT NULL DEFAULT 6.00, -- Tarifa base (bandeirada)
-    extra_per_zone NUMERIC(10, 2) NOT NULL DEFAULT 2.00, -- Adicional para zonas periféricas/distantes
-    courier_payout_pct NUMERIC(5, 2) NOT NULL DEFAULT 85.00, -- Percentual repassado ao motoboy (85%)
-    platform_fee_pct NUMERIC(5, 2) NOT NULL DEFAULT 15.00, -- Taxa da plataforma Food Rush (15%)
+    min_per_route NUMERIC(10, 2) NOT NULL DEFAULT 6.50, -- Valor mínimo garantido por rota
+    per_km NUMERIC(10, 2) NOT NULL DEFAULT 1.50, -- Valor por quilômetro rodado
+    promo_bonus NUMERIC(10, 2) NOT NULL DEFAULT 0.00, -- Bônus de promoção por corrida (pago pela plataforma)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -282,8 +281,8 @@ INSERT INTO bairros (id, cidade_id, name, zone) VALUES
 ON CONFLICT (cidade_id, name) DO NOTHING;
 
 -- 4. Parâmetros de Motoboys Autônomos para Santa Inês
-INSERT INTO motoboy_taxas_config (id, city_id, base_fee, extra_per_zone, courier_payout_pct, platform_fee_pct) VALUES
-('cfg-santaines', 'cid-santaines', 6.00, 2.00, 85.00, 15.00)
+INSERT INTO motoboy_taxas_config (id, city_id, min_per_route, per_km, promo_bonus) VALUES
+('cfg-santaines', 'cid-santaines', 6.50, 1.50, 0.00)
 ON CONFLICT (id) DO NOTHING;
 
 -- 5. Categorias

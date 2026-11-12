@@ -13,6 +13,7 @@ type CreateOrderInput = {
   items: CartItem[];
   subtotal: number;
   deliveryFee: number;
+  courierFee?: number;
   total: number;
   deliveryAddress: string;
   paymentMethod: PaymentMethod;
@@ -57,7 +58,23 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
     }
 
     const key = `${STORAGE_KEYS.ORDERS}_${user.id}`;
-    const stored = await storageGet<Order[] | null>(key, null);
+    let stored = await storageGet<Order[] | null>(key, null);
+
+    // Pedidos em andamento: confere no servidor se a loja ou o entregador mudaram algo
+    if (stored) {
+      const activeIds = stored.filter((o) => o.status !== "delivered" && o.status !== "cancelled").map((o) => o.id);
+      const remote = await api.getOrderUpdates(activeIds);
+      if (remote.length > 0) {
+        let changed = false;
+        stored = stored.map((o) => {
+          const r = remote.find((x) => x.id === o.id);
+          if (!r || (r.status === o.status && r.courierName === o.courierName)) return o;
+          changed = true;
+          return { ...o, status: r.status, courierId: r.courierId, courierName: r.courierName ?? o.courierName };
+        });
+        if (changed) await storageSet(key, stored);
+      }
+    }
 
     if (stored !== null) {
       setOrders(stored);
@@ -96,6 +113,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       minute: "2-digit",
     })}`;
 
+    const partner = isPartnerStore(input.restaurantId);
     const newOrder: Order = {
       id: `ord-${Date.now()}`,
       restaurantId: input.restaurantId,
@@ -104,13 +122,15 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       items: input.items,
       subtotal: input.subtotal,
       deliveryFee: input.deliveryFee,
+      courierFee: input.courierFee,
       total: input.total,
       createdAt: formattedDate,
-      status: isPartnerStore(input.restaurantId) ? "placed" : "out_for_delivery",
+      status: partner ? "placed" : "out_for_delivery",
       deliveryAddress: input.deliveryAddress,
       paymentMethod: input.paymentMethod,
-      courierName: "Policarpo de Sousa",
-      courierRating: 4.9,
+      // Lojas de exemplo simulam um entregador já a caminho. Nas lojas de empreendedores
+      // o entregador só aparece quando alguém aceita a corrida (senão o pedido não chega à rede).
+      ...(partner ? {} : { courierName: "Policarpo de Sousa", courierRating: 4.9 }),
       estimatedTime: "20-30 min",
       customerId: user?.id,
       customerName: user ? `${user.name} ${user.lastName ?? ""}`.trim() : "Cliente",

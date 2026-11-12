@@ -2,6 +2,7 @@ const express = require("express");
 const path = require("path");
 
 const fs = require("fs");
+const crypto = require("crypto");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -14,7 +15,7 @@ app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header(
     "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-User-Role, X-Store-Id"
   );
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") {
@@ -66,13 +67,28 @@ const estados = seed.estados || [{ id: "MA", name: "Maranhão", uf: "MA" }];
 let cidades = seed.cidades || [{ id: "cid-santaines", estadoId: "MA", name: "Santa Inês", isActive: true }];
 let bairros = [...(seed.bairros || [])];
 let lojaTaxasBairro = [...(seed.lojaTaxasBairro || [])];
+// Ganho do entregador no modelo do iFood: mínimo garantido por rota + valor por km
+// rodado + bônus de promoção (mesma regra de src/utils/deliveryFee.ts)
 let motoboyTaxasConfig = seed.motoboyTaxasConfig || {
   cityId: "cid-santaines",
-  baseFee: 6.0,
-  extraPerZone: 2.0,
-  courierPayoutPct: 85.0,
-  platformFeePct: 15.0,
+  minPerRoute: 6.5,
+  perKm: 1.5,
+  promoBonus: 0,
+  kmByZone: { central: 2, urbana: 3, periferica: 5, rural: 8 },
 };
+
+// Distância estimada pela zona do bairro (o app ainda não tem coordenadas)
+function estimateDistanceKm(zone) {
+  const table = motoboyTaxasConfig.kmByZone || { central: 2, urbana: 3, periferica: 5, rural: 8 };
+  return table[zone] ?? table.urbana ?? 3;
+}
+
+function calculateCourierFee(zone) {
+  const distanceKm = estimateDistanceKm(zone);
+  const routeFee = Math.round((motoboyTaxasConfig.minPerRoute + motoboyTaxasConfig.perKm * distanceKm) * 100) / 100;
+  const promoBonus = Number(motoboyTaxasConfig.promoBonus) || 0;
+  return { distanceKm, routeFee, promoBonus, courierPayout: Math.round((routeFee + promoBonus) * 100) / 100 };
+}
 let couriers = [...(seed.couriers || [])];
 let storeCouriers = [];
 
@@ -144,6 +160,7 @@ function savePersistentState() {
     couriers,
     storeCouriers,
     inMemoryOrders,
+    reviews,
     accounts: serverAccounts,
     bairros,
     lojaTaxasBairro,
@@ -159,6 +176,22 @@ function savePersistentState() {
       // Ignora erro em caminhos secundários
     }
   }
+}
+
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const passwordHash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return { salt, passwordHash };
+}
+
+function checkPassword(password, account) {
+  const hash = crypto.scryptSync(password, account.salt, 64);
+  const saved = Buffer.from(account.passwordHash, "hex");
+  return saved.length === hash.length && crypto.timingSafeEqual(saved, hash);
 }
 
 // Carrega o estado salvo previamente, se existir
@@ -179,8 +212,14 @@ if (savedState) {
   if (Array.isArray(savedState.inMemoryOrders) && savedState.inMemoryOrders.length > 0) {
     inMemoryOrders = savedState.inMemoryOrders;
   }
+  if (Array.isArray(savedState.reviews) && savedState.reviews.length > 0) {
+    reviews = savedState.reviews;
+  }
   if (Array.isArray(savedState.accounts)) {
-    serverAccounts = savedState.accounts;
+    // Contas salvas por versões antigas tinham a senha aberta: converte para hash
+    serverAccounts = savedState.accounts
+      .filter((a) => a && a.user && a.user.email)
+      .map((a) => (a.passwordHash ? a : { email: normalizeEmail(a.user.email), ...hashPassword(String(a.password || "")), user: a.user }));
   }
   if (Array.isArray(savedState.bairros) && savedState.bairros.length > 0) {
     bairros = savedState.bairros;
@@ -192,9 +231,11 @@ if (savedState) {
 
 // Middleware de isolamento estrito de lojas (RBAC)
 function verifyStoreOwnership(req, res, next) {
-  const userRole = req.headers["x-user-role"] || req.body.requesterRole;
-  const requesterStoreId = req.headers["x-store-id"] || req.body.requesterStoreId;
-  const targetStoreId = req.params.id || req.body.restaurantId;
+  // Pedidos DELETE não têm corpo: no Express 5 o req.body fica undefined
+  const body = req.body || {};
+  const userRole = req.headers["x-user-role"] || body.requesterRole;
+  const requesterStoreId = req.headers["x-store-id"] || body.requesterStoreId;
+  const targetStoreId = req.params.id || body.restaurantId;
 
   if (
     userRole === "partner" &&
@@ -209,17 +250,67 @@ function verifyStoreOwnership(req, res, next) {
   next();
 }
 
-// Endpoints de persistência de contas de usuário (clientes, parceiros e entregadores)
-app.get("/api/auth/accounts", (req, res) => {
-  res.json(serverAccounts || []);
+// ====================================================================
+// CONTAS DE USUÁRIO (clientes, empreendedores e entregadores)
+// A senha nunca é salva nem devolvida: o servidor guarda só o hash (scrypt + salt).
+// ====================================================================
+function findServerAccount(email) {
+  const e = normalizeEmail(email);
+  return serverAccounts.find((a) => a.email === e);
+}
+
+// Cria a conta. Responde 409 se o e-mail já estiver cadastrado.
+app.post("/api/auth/register", (req, res) => {
+  const { password, user } = req.body || {};
+  if (!user || !user.email || typeof password !== "string" || password.length < 6) {
+    return res.status(400).json({ error: "Informe o usuário e uma senha com pelo menos 6 caracteres." });
+  }
+  if (findServerAccount(user.email)) {
+    return res.status(409).json({ error: "Este e-mail já está cadastrado." });
+  }
+  serverAccounts.push({ email: normalizeEmail(user.email), ...hashPassword(password), user });
+  savePersistentState();
+  res.status(201).json({ ok: true });
 });
 
-app.post("/api/auth/accounts", (req, res) => {
-  if (Array.isArray(req.body.accounts)) {
-    serverAccounts = req.body.accounts;
-    savePersistentState();
+// Confere e-mail e senha. Devolve só os dados do usuário.
+app.post("/api/auth/login", (req, res) => {
+  const { email, password } = req.body || {};
+  const account = email ? findServerAccount(email) : null;
+  if (!account) {
+    return res.status(404).json({ error: "Não existe conta com este e-mail." });
   }
-  res.json({ ok: true, count: serverAccounts.length });
+  if (!checkPassword(String(password || ""), account)) {
+    return res.status(401).json({ error: "Senha incorreta." });
+  }
+  res.json({ user: account.user });
+});
+
+// Atualiza os dados do perfil (nome, endereços, foto...). Não muda a senha.
+app.put("/api/auth/users/:email", (req, res) => {
+  const account = findServerAccount(req.params.email);
+  if (!account) return res.status(404).json({ error: "Conta não encontrada." });
+  const { user } = req.body || {};
+  if (!user || normalizeEmail(user.email || "") !== account.email) {
+    return res.status(400).json({ error: "Dados do usuário inválidos." });
+  }
+  account.user = user;
+  savePersistentState();
+  res.json({ ok: true });
+});
+
+// Redefine a senha. Como o app ainda não envia e-mail de confirmação, funciona
+// igual à tela "Esqueceu a senha" do app; num app real exigiria um código por e-mail.
+app.post("/api/auth/reset-password", (req, res) => {
+  const { email, newPassword } = req.body || {};
+  const account = email ? findServerAccount(email) : null;
+  if (!account) return res.status(404).json({ error: "Não existe conta com este e-mail." });
+  if (typeof newPassword !== "string" || newPassword.length < 6) {
+    return res.status(400).json({ error: "A senha precisa ter pelo menos 6 caracteres." });
+  }
+  Object.assign(account, hashPassword(newPassword));
+  savePersistentState();
+  res.json({ ok: true });
 });
 
 // Rota raiz
@@ -275,7 +366,9 @@ app.post("/api/upload", (req, res) => {
     }
 
     const ext = mimeType.split("/")[1].replace("jpeg", "jpg");
-    const filename = `${folder}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    // Só letras, números e hífen no prefixo: impede nomes como "../../arquivo"
+    const safeFolder = String(folder).toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 30) || "general";
+    const filename = `${safeFolder}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
     const filePath = path.join(uploadsDir, filename);
 
     fs.writeFileSync(filePath, buffer);
@@ -330,6 +423,7 @@ app.post("/api/geo/cities/:id/neighborhoods", (req, res) => {
     zone: zone || "urbana",
   };
   bairros.push(newBairro);
+  savePersistentState();
   console.log(`[FOOD RUSH GEO] Novo bairro cadastrado em Santa Inês: ${newBairro.name}`);
   res.status(201).json(newBairro);
 });
@@ -356,7 +450,8 @@ app.post("/api/restaurants/:id/delivery-rates", verifyStoreOwnership, (req, res)
     (t) => t.restaurantId === req.params.id && t.bairroId === bairroId
   );
   const rateData = {
-    id: index >= 0 ? lojaTaxasBairro[index].id : `tb-${req.params.id}-${Date.now()}`,
+    // Usa o id que o app já tem, para o app conseguir excluir a taxa depois
+    id: index >= 0 ? lojaTaxasBairro[index].id : req.body.id || `tb-${req.params.id}-${Date.now()}`,
     restaurantId: req.params.id,
     bairroId,
     deliveryFee: feeNum,
@@ -369,13 +464,15 @@ app.post("/api/restaurants/:id/delivery-rates", verifyStoreOwnership, (req, res)
   } else {
     lojaTaxasBairro.push(rateData);
   }
+  savePersistentState();
   res.status(201).json(rateData);
 });
 
 app.delete("/api/restaurants/:id/delivery-rates/:rateId", verifyStoreOwnership, (req, res) => {
   lojaTaxasBairro = lojaTaxasBairro.filter(
-    (t) => !(t.restaurantId === req.params.id && t.id === req.params.rateId)
+    (t) => !(t.restaurantId === req.params.id && (t.id === req.params.rateId || t.bairroId === req.params.rateId))
   );
+  savePersistentState();
   res.status(204).end();
 });
 
@@ -406,20 +503,15 @@ app.post("/api/delivery/calculate-fee", (req, res) => {
 
   // 2. Cálculo para motoboys autônomos
   const bairro = bairros.find((b) => b.id === bairroId);
-  let fee = motoboyTaxasConfig.baseFee || 6.0;
-  if (bairro && (bairro.zone === "rural" || bairro.zone === "periferica")) {
-    fee += motoboyTaxasConfig.extraPerZone || 2.0;
-  }
-
-  const courierPayout = Math.round(fee * (motoboyTaxasConfig.courierPayoutPct / 100) * 100) / 100;
-  const platformFee = Math.round((fee - courierPayout) * 100) / 100;
+  const { distanceKm, routeFee, promoBonus, courierPayout } = calculateCourierFee(bairro && bairro.zone);
 
   return res.json({
-    deliveryFee: fee,
+    deliveryFee: routeFee, // o cliente paga o valor da rota
     estimatedTime: "25-40 min",
     source: "independent_courier",
-    courierFee: courierPayout,
-    platformFee,
+    distanceKm,
+    courierFee: courierPayout, // o entregador recebe a rota + bônus de promoção
+    promoBonus,
   });
 });
 
@@ -461,8 +553,49 @@ app.patch("/api/couriers/:id/status", (req, res) => {
       courier.isOnline = Boolean(req.body.isOnline);
     }
   }
+  courier.status = courier.isOnline ? "online" : "offline";
   savePersistentState();
   res.json(courier);
+});
+
+// Quanto o entregador ganha numa corrida: o valor gravado no pedido ou a regra pela zona
+function courierPayoutOfOrder(order) {
+  const bairro = bairros.find((b) => b.id === order.bairroId);
+  return Number(order.courierFee) || calculateCourierFee(bairro && bairro.zone).courierPayout;
+}
+
+// Marca o pedido como entregue, seja o entregador ou o cliente quem confirmou.
+// A comissão do entregador é calculada a partir dos pedidos entregues (ver /summary),
+// então não há risco de pagar duas vezes ou de deixar de pagar.
+function markDelivered(order) {
+  if (order.status === "delivered") return;
+  order.status = "delivered";
+  order.deliveredAt = new Date().toISOString();
+  if (order.courierId) order.courierFee = courierPayoutOfOrder(order);
+}
+
+// Resumo de ganhos do entregador, calculado a partir das corridas entregues
+app.get("/api/couriers/:id/summary", (req, res) => {
+  const today = new Date().toDateString();
+  const delivered = inMemoryOrders.filter((o) => o.courierId === req.params.id && o.status === "delivered");
+  const sum = (list) => Math.round(list.reduce((acc, o) => acc + courierPayoutOfOrder(o), 0) * 100) / 100;
+  const todayList = delivered.filter((o) => o.deliveredAt && new Date(o.deliveredAt).toDateString() === today);
+  res.json({
+    totalDeliveries: delivered.length,
+    totalEarnings: sum(delivered),
+    todayDeliveries: todayList.length,
+    todayEarnings: sum(todayList),
+  });
+});
+
+// Corridas que o entregador aceitou e ainda não concluiu
+app.get("/api/couriers/:id/active-orders", (req, res) => {
+  const active = inMemoryOrders.filter(
+    (o) =>
+      o.courierId === req.params.id &&
+      (o.status === "out_for_delivery" || o.status === "on_the_way" || o.status === "arriving")
+  );
+  res.json(active);
 });
 
 // Pedidos disponíveis para qualquer entregador da rede aceitar
@@ -550,6 +683,13 @@ app.post("/api/orders/:id/accept-delivery", (req, res) => {
   const { courierId, courierName } = req.body;
   const order = inMemoryOrders.find((o) => o.id === req.params.id);
   if (!order) return res.status(404).json({ error: "Pedido não encontrado." });
+  if (!courierId) return res.status(400).json({ error: "Informe o entregador." });
+  if (order.courierId && order.courierId !== courierId) {
+    return res.status(409).json({ error: "Outro entregador já aceitou esta corrida." });
+  }
+  if (order.status === "delivered" || order.status === "cancelled") {
+    return res.status(409).json({ error: "Este pedido não está mais disponível." });
+  }
 
   order.courierId = courierId;
   order.courierName = courierName || "Entregador Parceiro";
@@ -564,14 +704,14 @@ app.patch("/api/orders/:id/complete-delivery", (req, res) => {
   const order = inMemoryOrders.find((o) => o.id === req.params.id);
   if (!order) return res.status(404).json({ error: "Pedido não encontrado." });
 
-  order.status = "delivered";
-  if (order.courierId) {
-    const courier = couriers.find((c) => c.id === order.courierId);
-    if (courier) {
-      courier.totalDeliveries += 1;
-      courier.totalEarnings += Number(order.courierFee || order.deliveryFee || 5.0);
-    }
+  const { courierId } = req.body || {};
+  if (courierId && order.courierId && courierId !== order.courierId) {
+    return res.status(403).json({ error: "Esta corrida é de outro entregador." });
   }
+  if (order.status === "delivered") return res.json(order);
+
+  markDelivered(order);
+  savePersistentState();
   res.json(order);
 });
 
@@ -816,6 +956,10 @@ app.post("/api/restaurants/:id/reviews", (req, res) => {
 });
 
 app.get("/api/orders", (req, res) => {
+  const { restaurantId } = req.query;
+  if (restaurantId) {
+    return res.json(inMemoryOrders.filter((o) => o.restaurantId === restaurantId));
+  }
   res.json(inMemoryOrders);
 });
 
@@ -840,7 +984,10 @@ app.patch("/api/orders/:id/status", (req, res) => {
   const { status } = req.body;
   const order = inMemoryOrders.find((o) => o.id === req.params.id);
   if (!order) return res.status(404).json({ error: "Pedido não encontrado" });
-  if (status) {
+  if (status === "delivered") {
+    // Quem confirmou pode ser o cliente: o entregador recebe do mesmo jeito
+    markDelivered(order);
+  } else if (status) {
     order.status = status;
   }
   savePersistentState();
