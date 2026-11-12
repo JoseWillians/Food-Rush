@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -49,6 +50,7 @@ export default function StoreOrdersScreen() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("open");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Modal para escolher qual motoboy próprio vai fazer a entrega
   const [selectedOrderForCourier, setSelectedOrderForCourier] = useState<Order | null>(null);
@@ -76,6 +78,15 @@ export default function StoreOrdersScreen() {
       return () => clearInterval(intervalId);
     }, [loadOrders])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadOrders();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadOrders]);
 
   const handleAdvance = async (order: Order) => {
     const next = STATUS_INFO[order.status].next;
@@ -156,7 +167,17 @@ export default function StoreOrdersScreen() {
         ))}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
         ) : visible.length === 0 ? (
@@ -230,23 +251,13 @@ export default function StoreOrdersScreen() {
                 )}
 
                 {order.status === "preparing" && (
-                  <View style={styles.actionButtonGroup}>
-                    <AppButton
-                      title="Marcar como Pronto"
-                      variant="outline"
-                      onPress={() => handleAdvance(order)}
-                      loading={updatingId === order.id}
-                      size="sm"
-                      style={{ flex: 1 }}
-                    />
-                    <AppButton
-                      title="Mandar para Entregador"
-                      onPress={() => handleRequestNetworkCourier(order)}
-                      loading={updatingId === order.id}
-                      size="sm"
-                      style={{ flex: 1 }}
-                    />
-                  </View>
+                  <AppButton
+                    title="Marcar como Pronto para Entrega"
+                    onPress={() => handleAdvance(order)}
+                    loading={updatingId === order.id}
+                    size="sm"
+                    style={{ marginTop: spacing.sm }}
+                  />
                 )}
 
                 {order.status === "ready" && (

@@ -4,6 +4,7 @@ import {
   FlatList,
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -83,6 +84,7 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [requestingLocation, setRequestingLocation] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadRestaurants = useCallback(async () => {
     setLoading(true);
@@ -99,6 +101,15 @@ export default function HomeScreen() {
       setLoading(false);
     }
   }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadRestaurants();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadRestaurants]);
 
   // Recupera os filtros usados da última vez
   useEffect(() => {
@@ -207,6 +218,14 @@ export default function HomeScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
       >
         {/* Cabeçalho */}
         <View style={styles.header}>

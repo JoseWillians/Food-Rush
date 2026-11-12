@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef } from "react";
-import { Animated, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Animated, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -63,6 +63,7 @@ const STATUS_TEXT: Record<OrderStatus, { title: string; desc: string }> = {
 export default function OrderTrackingScreen() {
   const { activeOrder, updateOrderStatus, reloadOrders } = useOrders();
   const location = useDeviceLocation();
+  const [refreshing, setRefreshing] = useState(false);
 
   // Sempre que a tela aparece, relê os pedidos: a loja pode ter mudado o status
   useFocusEffect(
@@ -70,6 +71,15 @@ export default function OrderTrackingScreen() {
       reloadOrders();
     }, [reloadOrders])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await reloadOrders();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [reloadOrders]);
 
   // Polling em tempo real do estágio de entrega enquanto o pedido estiver ativo
   useEffect(() => {
@@ -155,7 +165,18 @@ export default function OrderTrackingScreen() {
         onBackPress={() => router.replace("/(tabs)/orders")}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
         <DeliveryMap
           restaurantName={activeOrder.restaurantName}
           estimatedTime={activeOrder.estimatedTime}

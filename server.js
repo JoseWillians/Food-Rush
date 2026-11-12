@@ -600,15 +600,22 @@ app.get("/api/couriers/:id/active-orders", (req, res) => {
 
 // Pedidos disponíveis para qualquer entregador da rede aceitar
 app.get("/api/couriers/:id/available-orders", (req, res) => {
-  const available = inMemoryOrders.filter(
-    (o) =>
-      (!o.courierId || o.courierRequested) &&
-      !o.courierName &&
-      (o.status === "ready" ||
-        o.status === "ready_for_pickup" ||
-        o.courierRequested ||
-        (o.status === "preparing" && o.deliveryMode === "independent_couriers"))
-  );
+  const available = inMemoryOrders.filter((o) => {
+    // 1. Só aparece para o motoboy após a loja ter aceitado, preparado e colocado como disponível/pronto
+    const isReady = o.status === "ready" || o.status === "ready_for_pickup";
+    if (!isReady) return false;
+
+    // 2. Não pode ter sido atribuído a nenhum entregador
+    if (o.courierId || o.courierName) return false;
+
+    // 3. Deve ser da modalidade de entregadores da rede OU ter sido solicitado pela loja
+    const isNetworkCourier =
+      o.deliveryMode === "independent_couriers" ||
+      o.deliveryMode === "independent_courier" ||
+      o.courierRequested === true;
+
+    return isNetworkCourier;
+  });
   res.json(available);
 });
 

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -46,6 +47,7 @@ export default function CourierDashboardScreen() {
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const isCourier = user?.role === "courier";
 
@@ -249,10 +251,19 @@ export default function CourierDashboardScreen() {
     }
   };
 
-  // Separar pedido ativo e pedidos disponíveis
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadData(true);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadData]);
+
+  // Separar pedido ativo e pedidos disponíveis (apenas pedidos prontos para entrega sem entregador)
   const activeOrder = myOrders[0];
   const pendingOrders = availableOrders.filter(
-    (o) => !o.courierId && (o.status === "ready" || o.status === "preparing" || o.status === "placed")
+    (o) => !o.courierId && !o.courierName && o.status === "ready"
   );
 
   return (
@@ -265,6 +276,14 @@ export default function CourierDashboardScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
       >
         {/* ===== Cartão de Identificação do Entregador ===== */}
         <View style={styles.profileCard}>

@@ -172,12 +172,19 @@ export const api = {
       apiRestaurants = mockRestaurants;
     }
 
-    // Combina lojas cadastradas (prioridade no topo) com a base padrão
-    // e aplica as notas atualizadas pelas avaliações feitas no app.
-    const combined = await applyRatingOverrides([
-      ...customList,
-      ...apiRestaurants.filter((ar) => !customList.some((cr) => cr.id === ar.id)),
-    ]);
+    // Se a API respondeu, o servidor é a fonte de verdade para status (aberta/fechada),
+    // novas lojas criadas e configurações. Mesclamos com lojas criadas offline.
+    const mergedMap = new Map<string, Restaurant>();
+    for (const r of apiRestaurants) {
+      mergedMap.set(r.id, r);
+    }
+    for (const r of customList) {
+      if (!mergedMap.has(r.id)) {
+        mergedMap.set(r.id, r);
+      }
+    }
+
+    const combined = await applyRatingOverrides(Array.from(mergedMap.values()));
 
     if (category) {
       return combined.filter((r) =>
@@ -191,6 +198,16 @@ export const api = {
    * Busca restaurante por ID (lojas customizadas + padrão)
    */
   async getRestaurantById(id: string): Promise<Restaurant | null> {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/restaurants/${encodeURIComponent(id)}`);
+      if (res.ok) {
+        const rest = await res.json();
+        const [withRating] = await applyRatingOverrides([rest]);
+        return withRating;
+      }
+    } catch {
+      // Offline fallback
+    }
     const all = await this.getRestaurants();
     return all.find((r) => r.id === id) || null;
   },
@@ -1035,15 +1052,17 @@ export const api = {
     }
 
     const storeOrders = await storageGet<Order[]>(STORAGE_KEYS.STORE_ORDERS, []);
-    return storeOrders.filter(
-      (o) =>
-        (!o.courierId || o.courierRequested) &&
-        !o.courierName &&
-        (o.status === "ready" ||
-          o.courierRequested ||
-          (o.status === "preparing" && (o.deliveryMode === "independent_couriers" || o.deliveryMode === "independent_courier")) ||
-          (o.status === "placed" && o.courierRequested))
-    );
+    return storeOrders.filter((o) => {
+      // O entregador só vê o pedido se a loja já tiver preparado e colocado como disponível/pronto
+      const isReady = o.status === "ready";
+      if (!isReady) return false;
+      if (o.courierId || o.courierName) return false;
+      const isNetworkCourier =
+        o.deliveryMode === "independent_couriers" ||
+        o.deliveryMode === "independent_courier" ||
+        o.courierRequested === true;
+      return isNetworkCourier;
+    });
   },
 
   /**

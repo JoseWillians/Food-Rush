@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -50,42 +51,46 @@ export default function RestaurantDetailScreen() {
   );
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const { user } = useAuth();
   const { addItem, clearCart, total, itemCount, cartRestaurant, isFromAnotherStore } = useCart();
   const { isFavorite, toggleFavorite, isFavoriteProduct, toggleFavoriteProduct } = useFavorites();
 
+  const loadData = useCallback(async () => {
+    if (!id) return;
+    try {
+      const [found, prods, revs] = await Promise.all([
+        api.getRestaurantById(id),
+        api.getProducts(id),
+        api.getReviews(id),
+      ]);
+      if (found) setRestaurant(found);
+      setProducts(prods);
+      setReviews(revs);
+    } catch {
+      // Em caso de erro mantém os dados locais já exibidos
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
   // Recarrega sempre que a tela ganha foco. Assim, se o dono cadastrar um prato
   // ou o cliente enviar uma avaliação, a tela já aparece atualizada ao voltar.
   useFocusEffect(
     useCallback(() => {
-      let ativo = true; // evita atualizar o estado se o usuário já saiu da tela
-
-      async function loadData() {
-        if (!id) return;
-        try {
-          const [found, prods, revs] = await Promise.all([
-            api.getRestaurantById(id),
-            api.getProducts(id),
-            api.getReviews(id),
-          ]);
-          if (!ativo) return;
-          if (found) setRestaurant(found);
-          setProducts(prods);
-          setReviews(revs);
-        } catch {
-          // Em caso de erro mantém os dados locais já exibidos
-        } finally {
-          if (ativo) setLoading(false);
-        }
-      }
-
       loadData();
-      return () => {
-        ativo = false;
-      };
-    }, [id])
+    }, [loadData])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadData();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadData]);
 
   // Ainda buscando uma loja criada pelo empreendedor (ou ela não existe)
   if (!restaurant) {
@@ -136,6 +141,14 @@ export default function RestaurantDetailScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
       >
         {/* Imagem do Restaurante & Botões Flutuantes */}
         <View style={styles.imageContainer}>

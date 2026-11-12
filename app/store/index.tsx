@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -85,6 +86,7 @@ export default function StoreDashboardScreen() {
   const [courierPlate, setCourierPlate] = useState("");
   const [savingCourier, setSavingCourier] = useState(false);
   const [courierErrors, setCourierErrors] = useState<FieldErrors>({});
+  const [refreshing, setRefreshing] = useState(false);
 
   const cityId = (store as any)?.cityId || "cidade-santa-ines";
 
@@ -117,6 +119,15 @@ export default function StoreDashboardScreen() {
       loadData();
     }, [loadData])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadData();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadData]);
 
   if (!store) {
     return (
@@ -469,6 +480,14 @@ export default function StoreDashboardScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
       >
         {/* ===== Dados da loja ===== */}
         <View style={styles.card}>

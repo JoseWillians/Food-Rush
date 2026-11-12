@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 import {
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -40,6 +41,7 @@ type OrdersTab = "active" | "history";
  */
 export default function OrdersScreen() {
   const [activeTab, setActiveTab] = useState<OrdersTab>("active");
+  const [refreshing, setRefreshing] = useState(false);
   const { orders, setActiveOrder, reloadOrders } = useOrders();
 
   // Relê os pedidos ao abrir a aba (a loja pode ter atualizado algum status)
@@ -48,6 +50,15 @@ export default function OrdersScreen() {
       reloadOrders();
     }, [reloadOrders])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await reloadOrders();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [reloadOrders]);
   const { items: cartItems, addItem, clearCart } = useCart();
 
   const filteredOrders = orders.filter((order) => {
@@ -125,6 +136,14 @@ export default function OrdersScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
       >
         {filteredOrders.length === 0 ? (
           <EmptyState
